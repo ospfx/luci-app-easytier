@@ -1,0 +1,14 @@
+easytier-core
+-r
+15888
+--no-listener
+--vpn-portal
+wg://0.0.0.0:11011
+--vpn-portal-client
+client1=10.14.14.1/24
+--vpn-portal-client
+client2=10.14.15.1/24
+--multi-thread
+false
+--bind-device
+false

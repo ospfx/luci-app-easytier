@@ -1,0 +1,10 @@
+easytier-web
+-d
+/etc/easytier/et.db
+-p
+udp
+-c
+22020
+-a
+11211
+--no-web

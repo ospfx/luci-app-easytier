@@ -1,0 +1,7 @@
+easytier-core
+--machine-id
+<uuid>
+-w
+udp://config-server.easytier.cn:22020/user1
+--hostname
+router-1

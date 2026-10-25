@@ -29,8 +29,8 @@ SSH_OPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile="$CLOUD/known_hosts"
 REMOTE_REPO="/workspace/.build/pkg/src"
 echo "[build] 同步工作树 -> $REMOTE_REPO"
 tar czf - -C "$ROOT" --exclude=.git --exclude=.cloud --exclude=build \
-    --exclude='*.o' . 2>/dev/null \
-  | ssh "${SSH_OPTS[@]}" "$ET_SSH" "mkdir -p '$REMOTE_REPO' && rm -rf '$REMOTE_REPO'/* && tar xzf - -C '$REMOTE_REPO'" || exit 1
+    --exclude='*.o' --owner=0 --group=0 --numeric-owner . 2>/dev/null \
+  | ssh "${SSH_OPTS[@]}" "$ET_SSH" "mkdir -p '$REMOTE_REPO' && rm -rf '$REMOTE_REPO'/* && tar xzf - --no-same-owner --no-same-permissions -C '$REMOTE_REPO'" || exit 1
 
 REMOTE="set -e
 SDK=/workspace/.toolchain/sdk

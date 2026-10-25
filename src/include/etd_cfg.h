@@ -35,6 +35,10 @@ enum et_emit {
 	ET_E_REPEAT,   /* list：每个元素输出一次 flag <元素> */
 	ET_E_REPEAT_JOIN, /* list：每个元素输出一次 "flag 'a b'"（带引号整体） */
 	ET_E_CUSTOM,   /* 需要特殊逻辑，由 et_argv_core() 手写 */
+	/* ---- 以下为追加项（C 重写实现新增，语义见行内注释） ---- */
+	ET_E_ONE,      /* [ "$x" = "1" ] && flag              —— 严格等于 "1" 才输出裸旗标 */
+	ET_E_ONEVAL,   /* [ "$x" = "1" ] && flag true         —— 严格等于 "1" 才输出 "flag true" */
+	ET_E_YESVAL,   /* [ "$x" = "0" ] || flag true         —— 非 "0" 输出 "flag true" */
 };
 
 typedef struct {

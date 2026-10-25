@@ -1,0 +1,55 @@
+# 自建 Web 控制台（easytier-web）：校验 et_argv_web 的顺序、空地址跳过、
+# 以及 OIDC / Webhook 两组的 enabled 门控。
+#
+# webconsole.web.args 推导依据（init.d start_web，行号）：
+#   806 -d db_path   807 -p web_protocol   808 -c web_port   809 -a api_port
+#   810 --api-host   811 --geoip-db
+#   812-816 html_port=11213 非空 → -l 11213（为空才输出 --no-web，
+#           见 webconsole_min 用例；libuci 会把 `option x ''` 直接丢弃，
+#           所以"空值"与"未配置"在 UCI 层面等价，与 uci -q get 的 rc=1 一致）
+#   818 api_addr=0.0.0.0 → 不输出 --api-server-addr
+#   819 html_addr=192.168.1.1 → --web-server-addr 192.168.1.1
+#   820 disable_registration=1 → --disable-registration
+#   821 allow_auto_create_user=0 → 不输出
+#   823 --heartbeat-min-response-ms  824 --heartbeat-timeout-ms
+#   825 --gateway-peer-url  826 gateway_relay_data=1 → --gateway-relay-data true
+#   828-837 oidc_enabled=1 → 依次 --oidc-issuer-url / -client-id / -client-secret /
+#           -redirect-url / -username-claim / -scopes / -frontend-base-url，
+#           disable_pkce=1 → --oidc-disable-pkce
+#           （--oidc-scopes 在 shell 里带 "..." 包裹，整体仍是单个参数）
+#   840-846 webhook_enabled=1 → --webhook-url / -secret / --internal-auth-token /
+#           --web-instance-id / --web-instance-api-base-url
+#   847-849 weblog=info ≠ off → --console-log-level info
+config easytier
+	option web_enabled '1'
+	option web_db_path '/etc/easytier/et.db'
+	option web_protocol 'tcp'
+	option web_port '22020'
+	option web_api_port '11211'
+	option web_html_port '11213'
+	option web_api_addr '0.0.0.0'
+	option web_html_addr '192.168.1.1'
+	option web_api_host 'http://192.168.1.1:11211'
+	option web_geoip_db '/etc/easytier/GeoLite.mmdb'
+	option web_disable_registration '1'
+	option web_allow_auto_create_user '0'
+	option web_heartbeat_min_response_ms '500'
+	option web_heartbeat_timeout_ms '3000'
+	option web_gateway_peer_url 'udp://gw:22020'
+	option web_gateway_relay_data '1'
+	option web_weblog 'info'
+	option web_oidc_enabled '1'
+	option web_oidc_issuer_url 'https://id.example.com'
+	option web_oidc_client_id 'cid'
+	option web_oidc_client_secret 'csecret'
+	option web_oidc_redirect_url 'https://router.example.com/cb'
+	option web_oidc_username_claim 'preferred_username'
+	option web_oidc_scopes 'openid profile email'
+	option web_oidc_frontend_base_url 'https://router.example.com'
+	option web_oidc_disable_pkce '1'
+	option web_webhook_enabled '1'
+	option web_webhook_url 'https://hook.example.com/x'
+	option web_webhook_secret 'wsecret'
+	option web_internal_auth_token 'tok'
+	option web_web_instance_id 'iid'
+	option web_web_instance_api_base_url 'https://api.example.com'

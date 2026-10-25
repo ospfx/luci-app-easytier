@@ -47,11 +47,16 @@ if [ "${1:-}" = "-s" ]; then
     exit $rc
 fi
 
-if run_once "$@"; then
+run_once "$@"
+rc=$?
+if [ $rc -eq 0 ]; then
     exit 0
 fi
-rc=$?
-echo "[ssh] 失败（rc=$rc），尝试重新拉起环境后重试..." >&2
+# 只有 ssh 自身连不上（255）才认为环境被回收；远端命令失败（1/2/...）原样返回
+if [ $rc -ne 255 ]; then
+    exit $rc
+fi
+echo "[ssh] 连接失败（rc=$rc），尝试重新拉起环境后重试..." >&2
 if CNB_TOKEN="$(cat "$CLOUD/token" 2>/dev/null)" \
     bash "$ROOT/scripts/cloud/start.sh" "${ET_BRANCH:-main}" >/dev/null 2>&1; then
     # shellcheck disable=SC1090

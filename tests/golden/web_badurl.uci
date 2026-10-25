@@ -1,0 +1,14 @@
+# etcmd=web 但 web_config 只填了账户名（2.6.4 旧写法）：2.7.0 起 -w 必须完整 URL，
+# 否则解析失败并让进程退出 → 跳过 -w 并写 notes。**注意跳过 -w 不影响 --hostname**。
+#
+# web_badurl.core.args 推导依据（init.d，重写前 1014 行版本的行号）：
+#   662-668 /etc/easytier/et_machine_id：不存在则 touch，空则写 /proc 的 UUID，
+#           然后 et_uuid="$(cat ... | tr -d ' \n')" → --machine-id $et_uuid
+#   671-680 case "$web_config"：*://* 才加 -w；*) 分支只写日志（跳过 -w）
+#   681     [ -z "$desvice_name" ] || core_cmd="... --hostname $(shell_quote ...)"
+#           ← 这一行在 case 之外，所以"跳过 -w"后**仍会**输出 --hostname
+#   machine-id 是随机 UUID，期望文件用 <uuid> 做格式断言（见 tests/argv_test.c）
+config easytier
+	option etcmd 'web'
+	option web_config 'my-token'
+	option desvice_name 'bad router'

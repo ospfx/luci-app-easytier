@@ -3,6 +3,17 @@
 #
 # This is free software, licensed under the Apache License, Version 2.0 .
 #
+# 前端桥接层安装内容（luci.mk 会把 luasrc/ 与 root/ 整树装进包）：
+#   luasrc/controller/easytier.lua      → /usr/lib/lua/luci/controller/easytier.lua（极薄转发壳）
+#   luasrc/view/easytier/*.htm          → /usr/lib/lua/luci/view/easytier/
+#   root/usr/share/rpcd/acl.d/*.json    → rpcd ACL（UCI easytier + easytierctl exec）
+#   root/etc/uci-defaults/luci-easytier → 首次安装注册 ucitrack 并 enable 服务
+#   root/usr/share/easytier/i18n/*.json → C 侧渲染用的 i18n 字典
+#                                         （tools/i18n_build.py 从 po/ 生成后提交）
+#   root/etc/init.d/easytier            → 极薄委托脚本（转发给 easytierd）
+#
+# 业务逻辑全部在 easytierd/easytierctl（C）里，因此运行时依赖 +easytierd。
+#
 
 include $(TOPDIR)/rules.mk
 -include $(dir $(lastword $(MAKEFILE_LIST)))../version.mk
@@ -13,7 +24,7 @@ PKG_RELEASE:=1
 PKG_PO_VERSION:=$(PKG_VERSION)
 
 LUCI_TITLE:=LuCI support for EasyTier
-LUCI_DEPENDS:=+kmod-tun +luci-compat
+LUCI_DEPENDS:=+kmod-tun +luci-compat +easytierd
 LUCI_PKGARCH:=all
 
 PKG_NAME:=luci-app-easytier

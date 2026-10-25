@@ -1,0 +1,108 @@
+# 全量配置：所有 core 选项都打开，用于校验 argv 顺序与"带不带参数 / true|false 形式"。
+#
+# full.core.args 推导依据（init.d 行号 → 输出）：
+#   472 --network-name 473 --network-secret（值含空格，shell_quote 后仍是单个参数）
+#   474 -i 475 --ipv6 476 -d
+#   477-485 -p（peeradd 两条）486-494 -n（proxy_network 两条）
+#   495-503 --exit-nodes 504-512 --manual-routes
+#   513-525 relay_network=1 且 whitelist 非空 → 每条 --relay-network-whitelist
+#   526-534 --mapped-listeners 535-543 --port-forward
+#   544 -r 545 --rpc-portal-whitelist
+#   546-551 -l tcp:/udp:（同一 tcp_port）、-l ws:、-l wss:、-l wg:、-l quic:
+#   552 -e 553 listenermode=ON → 无 --no-listener
+#   554 --hostname 555 -m 556-575 --vpn-portal（未配置，跳过）
+#   586 --mtu 587 --default-protocol 588 --dev-name 589 -u
+#   590-595 --multi-thread true 596 --multi-thread-count
+#   597 --no-tun 598 --use-smoltcp 599 --disable-ipv6 600 --latency-first
+#   601 --enable-exit-node 602 --disable-p2p 603 --relay-all-peer-rpc 604 --socks5
+#   605 --compression 606-607 --bind-device true（=1 时只输出 true）
+#   608 --enable-kcp-proxy 609 --disable-kcp-input 610 --proxy-forward-by-system
+#   611 --accept-dns true 612 --private-mode true 613 --enable-quic-proxy
+#   614 --disable-quic-input 615 --foreign-relay-bps-limit
+#   616-618 --encryption-algorithm（chacha20 != aes-gcm）
+#   619 --p2p-only 620 --disable-tcp-hole-punching 621 --disable-udp-hole-punching
+#   622 --disable-sym-hole-punching 623 --disable-relay-kcp true
+#   624 --enable-relay-foreign-network-kcp true 625 --disable-relay-quic true
+#   626 --enable-relay-foreign-network-quic true 627 --udp-whitelist 628 --tcp-whitelist
+#   630 --tld-dns-zone 631 --instance-recv-bps-limit 632 --socket-mark
+#   633 --disable-upnp 634 --lazy-p2p 635 --need-p2p
+#   637-641 --stun-servers×2 642-646 --tcp-stun-servers×1
+#   647-653 extra_args 逐行追加，行内按空白切分（'--custom-a 1 2' → 3 个参数）
+config easytier
+	option enabled '1'
+	option etcmd 'etcmd'
+	option easytierbin '/usr/bin/easytier-core'
+	option webbin '/usr/bin/easytier-web'
+	option network_name 'my net'
+	option network_secret 'sec ret'
+	option ipaddr '10.0.0.1'
+	option ip6addr '2001:db8::1'
+	option ip_dhcp '1'
+	list peeradd 'tcp://a.example.com:11010'
+	list peeradd 'udp://b.example.com:11010'
+	list proxy_network '192.168.1.0/24'
+	list proxy_network '10.0.0.0/8'
+	list exit_nodes '10.0.0.9'
+	list manual_routes '172.16.0.0/12'
+	option relay_network '1'
+	list whitelist 'def*'
+	list whitelist '*'
+	list mapped_listeners 'tcp://1.2.3.4:11223'
+	list port_forward 'udp://0.0.0.0:12345/10.126.126.1:23456'
+	option rpc_portal '15888'
+	option rpc_portal_whitelist '127.0.0.1/32'
+	option tcp_port '11010'
+	option ws_port '11011'
+	option wss_port '11012'
+	option wg_port '11011'
+	option quic_port '11013'
+	option external_node 'tcp://public.easytier.top:11010'
+	option listenermode 'ON'
+	option desvice_name 'my router'
+	option instance_name 'inst1'
+	option mtu '1300'
+	option default_protocol 'tcp'
+	option tunname 'tun9'
+	option disable_encryption '1'
+	option multi_thread '1'
+	option multi_thread_count '4'
+	option no_tun '1'
+	option smoltcp '1'
+	option disable_ipv6 '1'
+	option latency_first '1'
+	option exit_node '1'
+	option disable_p2p '1'
+	option relay_all '1'
+	option socks_port '1080'
+	option comp 'zstd'
+	option bind_device '1'
+	option kcp_proxy '1'
+	option kcp_input '1'
+	option proxy_forward '1'
+	option accept_dns '1'
+	option private_mode '1'
+	option quic_proxy '1'
+	option quic_input '1'
+	option foreign_relay_bps_limit '1048576'
+	option encryption_algorithm 'chacha20'
+	option p2p_only '1'
+	option disable_tcp '1'
+	option disable_udp '1'
+	option disable_sym '1'
+	option disable_relay_kcp '1'
+	option relay_kcp '1'
+	option disable_relay_quic '1'
+	option relay_quic '1'
+	option udp_white_port '53'
+	option tcp_white_port '80-90'
+	option tld_dns_zone 'et.net.'
+	option instance_recv_bps_limit '2048'
+	option socket_mark '16'
+	option disable_upnp '1'
+	option lazy_p2p '1'
+	option need_p2p '1'
+	list stun_servers 'stun.miwifi.com:3478'
+	list stun_servers 'stun.example.com:3478'
+	list tcp_stun_servers 'tcp-stun.example.com:3478'
+	list extra_args '--tcp-whitelist=80'
+	list extra_args '--custom-a 1 2'

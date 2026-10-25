@@ -1,0 +1,10 @@
+easytier-core
+-r
+15888
+--no-listener
+--vpn-portal-client
+client1=10.14.14.1/24
+--multi-thread
+false
+--bind-device
+false

@@ -10,6 +10,7 @@
  */
 #include "etd.h"
 #include "etd_api.h"
+#include "etd_proc.h"
 #include "etd_util.h"
 
 #include <stdio.h>

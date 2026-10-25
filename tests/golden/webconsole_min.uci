@@ -1,0 +1,12 @@
+# Web 控制台在"用户从未保存过 Web 页面"时的行为，对齐 init.d start_web 的判空写法：
+#   -d/-p/-c/-a 的取值来自 controller get_web_config 的 or 兜底
+#     （/etc/easytier/et.db、udp、22020、11211），有值就输出（init.d:806-809）
+#   web_html_port 没有兜底 → [ -z "$html_port" ] 成立 → --no-web（init.d:812-813）
+#     （注意：libuci 会丢弃 `option x ''`，所以"空值"与"未配置"等价，
+#      与 `uci -q get` 返回 rc=1 完全一致）
+#   web_api_addr/web_html_addr 默认 0.0.0.0 → 不输出（init.d:818-819）
+#   web_disable_registration / web_allow_auto_create_user 默认 0 → 不输出
+#   OIDC / Webhook 组默认关闭 → 不输出
+#   web_weblog 默认 off → 不输出 --console-log-level（init.d:847-849）
+config easytier
+	option web_enabled '1'

@@ -1,0 +1,12 @@
+# VPN 门户 2.7.0 新写法：wg://主机:端口 + 私钥 + 具名客户端。
+#
+# vpn_new.core.args 推导依据：
+#   557-575 if [ -n "$vpn_portal" ]：wg://*）且私钥非空 → --vpn-portal wg://0.0.0.0:11011
+#   577-585 vpn_portal_clients 两条 → 每条一个 --vpn-portal-client
+#   544 -r 15888；553 listenermode 未配置 → --no-listener
+config easytier
+	option etcmd 'etcmd'
+	option vpn_portal 'wg://0.0.0.0:11011'
+	option vpn_portal_private_key 'AAAA'
+	list vpn_portal_clients 'client1=10.14.14.1/24'
+	list vpn_portal_clients 'client2=10.14.15.1/24'

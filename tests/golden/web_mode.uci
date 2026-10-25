@@ -1,0 +1,15 @@
+# etcmd=web：Web 控制台托管模式。
+#
+# web_mode.core.args 推导依据：
+#   659-668  /etc/easytier/et_machine_id 不存在/为空时用 /proc/sys/kernel/random/uuid
+#            生成并落盘，然后 et_uuid="$(cat ... | tr -d ' \n')"
+#            → [ -z "$et_uuid" ] || --machine-id $et_uuid
+#            本测试用 -DET_FILE_MACHINE_ID 指向固定 UUID 的临时文件，保证可比对
+#   671-680  web_config 含 "://" → -w udp://config-server.easytier.cn:22020/user1
+#   681      --hostname router-1
+#   注意：web 分支里 core_cmd 从空串开始，默认分支那一长串参数一个都不会出现
+config easytier
+	option etcmd 'web'
+	option web_config 'udp://config-server.easytier.cn:22020/user1'
+	option desvice_name 'router-1'
+	option tunname 'tun0'

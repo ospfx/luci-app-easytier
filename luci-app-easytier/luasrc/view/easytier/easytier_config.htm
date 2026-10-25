@@ -1,0 +1,342 @@
+<%
+local et = require "luci.controller.easytier"
+-%>
+<%+header%>
+
+<style>
+.et-config {
+	margin-bottom: 16px;
+}
+
+.et-tabs {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin: 0 0 16px 0;
+}
+
+.et-tab {
+	padding: 8px 16px;
+	border: 1px solid #d0d0d0;
+	border-radius: 6px;
+	background: #f7f7f7;
+	color: #333;
+	font-size: 14px;
+	cursor: pointer;
+	transition: all .2s;
+}
+
+.et-tab:hover {
+	border-color: #2196F3;
+	color: #2196F3;
+}
+
+.et-tab-active,
+.et-tab-active:hover {
+	background: #2196F3;
+	border-color: #2196F3;
+	color: #fff;
+}
+
+.et-tab-panel {
+	display: none;
+}
+
+.et-tab-panel-active {
+	display: block;
+}
+
+.et-switch {
+	display: inline-block;
+	position: relative;
+	width: 44px;
+	height: 24px;
+	vertical-align: middle;
+}
+
+.et-switch input {
+	position: absolute;
+	opacity: 0;
+	width: 0;
+	height: 0;
+}
+
+.et-switch label {
+	display: block;
+	width: 44px;
+	height: 24px;
+	background: #bdbdbd;
+	border-radius: 12px;
+	cursor: pointer;
+	transition: background .2s;
+}
+
+.et-switch label:after {
+	content: "";
+	position: absolute;
+	top: 3px;
+	left: 3px;
+	width: 18px;
+	height: 18px;
+	background: #fff;
+	border-radius: 50%;
+	transition: left .2s;
+}
+
+.et-switch input:checked + label {
+	background: #4CAF50;
+}
+
+.et-switch input:checked + label:after {
+	left: 23px;
+}
+
+.et-list-rows {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	margin-bottom: 6px;
+}
+
+.et-list-row {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.et-list-row input.cbi-input-text {
+	flex: 1;
+	margin: 0;
+}
+
+.et-list-del {
+	min-width: 32px;
+	padding: 4px 8px;
+	line-height: 1;
+}
+
+.et-checks label {
+	display: block;
+	margin: 2px 0;
+	line-height: 1.8;
+}
+
+.et-checks input {
+	margin-right: 6px;
+}
+
+.et-config-msg {
+	display: none;
+	margin: 0 0 16px 0;
+	padding: 10px 14px;
+	border-radius: 6px;
+	font-size: 14px;
+}
+
+.et-config-msg.success {
+	background: #e8f5e9;
+	border: 1px solid #4CAF50;
+	color: #2e7d32;
+}
+
+.et-config-msg.error {
+	background: #ffebee;
+	border: 1px solid #F44336;
+	color: #c62828;
+}
+
+@media (prefers-color-scheme: dark) {
+	.et-tab {
+		background: #2a2a2a;
+		border-color: #3e3e3e;
+		color: #d0d0d0;
+	}
+
+	.et-config-msg.success {
+		background: #1b3320;
+		border-color: #4CAF50;
+		color: #a5d6a7;
+	}
+
+	.et-config-msg.error {
+		background: #3a1e1e;
+		border-color: #F44336;
+		color: #ef9a9a;
+	}
+}
+</style>
+
+<div id="et_config_msg" class="et-config-msg"></div>
+
+<form id="et_config_form" method="post"
+      action="<%=url("admin", "vpn", "easytier", "config_save")%>"
+      onsubmit="return etConfigSave();">
+	<% write(et.easytierctl_render()) %>
+	<div class="cbi-page-actions">
+		<input type="submit" class="cbi-button cbi-button-save" value="<%:Save Configuration%>">
+	</div>
+</form>
+
+<script type="text/javascript">//<![CDATA[
+(function() {
+	var form = document.getElementById('et_config_form');
+	if (!form) return;
+
+	function each(list, fn) {
+		for (var i = 0; i < list.length; i++) fn(list[i], i);
+	}
+
+	function fieldValue(name) {
+		var el = form.elements[name];
+		if (!el) return '';
+		if (el.type === 'checkbox') return el.checked ? '1' : '0';
+		return el.value;
+	}
+
+	function depOk(dep) {
+		var alts = dep.split('|');
+		for (var i = 0; i < alts.length; i++) {
+			var kv = alts[i].split(':');
+			if (fieldValue(kv[0]) === kv[1]) return true;
+		}
+		return false;
+	}
+
+	function applyDeps() {
+		each(form.querySelectorAll('[data-dep]'), function(el) {
+			el.style.display = depOk(el.getAttribute('data-dep')) ? '' : 'none';
+		});
+	}
+
+	function activateTab(id) {
+		each(form.querySelectorAll('.et-tab'), function(el) {
+			el.className = el.getAttribute('data-tab') === id ? 'et-tab et-tab-active' : 'et-tab';
+		});
+		each(form.querySelectorAll('.et-tab-panel'), function(el) {
+			el.className = el.getAttribute('data-tab') === id
+				? 'et-tab-panel et-tab-panel-active' : 'et-tab-panel';
+		});
+	}
+
+	function removeRow(btn) {
+		var row = btn.parentNode;
+		var rows = row.parentNode;
+		if (rows.querySelectorAll('.et-list-row').length > 1) {
+			rows.removeChild(row);
+		} else {
+			var input = row.querySelector('input');
+			if (input) input.value = '';
+		}
+	}
+
+	function addRow(btn) {
+		var rows = btn.parentNode.querySelector('.et-list-rows');
+		var row = document.createElement('div');
+		var input = document.createElement('input');
+		var del = document.createElement('button');
+
+		row.className = 'et-list-row';
+		input.type = 'text';
+		input.className = 'cbi-input-text';
+		del.type = 'button';
+		del.className = 'cbi-button et-list-del';
+		del.innerHTML = '&#215;';
+		del.onclick = function() { removeRow(del); };
+
+		row.appendChild(input);
+		row.appendChild(del);
+		rows.appendChild(row);
+		input.focus();
+	}
+
+	function trim(s) {
+		return s.replace(/^\s+|\s+$/g, '');
+	}
+
+	function collect() {
+		var out = [];
+		each(form.elements, function(el) {
+			if (!el.name) return;
+			if (el.type === 'checkbox') {
+				out.push(encodeURIComponent(el.name) + '=' + (el.checked ? '1' : '0'));
+			} else {
+				out.push(encodeURIComponent(el.name) + '=' + encodeURIComponent(el.value));
+			}
+		});
+		each(form.querySelectorAll('.et-list'), function(list) {
+			var vals = [];
+			each(list.querySelectorAll('.et-list-row input'), function(input) {
+				var v = trim(input.value);
+				if (v !== '') vals.push(v);
+			});
+			out.push(encodeURIComponent(list.getAttribute('data-name')) +
+				'=' + encodeURIComponent(vals.join('\n')));
+		});
+		each(form.querySelectorAll('.et-checks'), function(box) {
+			var vals = [];
+			each(box.querySelectorAll('input'), function(input) {
+				if (input.checked) vals.push(input.value);
+			});
+			out.push(encodeURIComponent(box.getAttribute('data-name')) +
+				'=' + encodeURIComponent(vals.join('\n')));
+		});
+		return out.join('&');
+	}
+
+	function show(kind, text) {
+		var box = document.getElementById('et_config_msg');
+		if (!box) return;
+		box.className = 'et-config-msg ' + kind;
+		box.innerHTML = '';
+		box.appendChild(document.createTextNode(text));
+		box.style.display = 'block';
+		setTimeout(function() { box.style.display = 'none'; }, 4000);
+	}
+
+	function save() {
+		var xhr = new XMLHttpRequest();
+		xhr.open('POST', form.getAttribute('action'), true);
+		xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+		xhr.onload = function() {
+			var data = null;
+			if (xhr.status === 200) {
+				try { data = JSON.parse(xhr.responseText); } catch (e) { data = null; }
+			}
+			if (!data) {
+				show('error', '<%:Save failed%>');
+				return;
+			}
+			if (data.success) {
+				show('success', data.message || '<%:Configuration saved successfully%>');
+			} else {
+				show('error', data.message || '<%:Save failed%>');
+			}
+		};
+		xhr.onerror = function() { show('error', '<%:Save failed%>'); };
+		xhr.send(collect());
+		return false;
+	}
+
+	window.etConfigSave = save;
+
+	each(form.querySelectorAll('.et-tab'), function(el) {
+		el.onclick = function() { activateTab(el.getAttribute('data-tab')); };
+	});
+	each(form.querySelectorAll('.et-list-add'), function(el) {
+		el.onclick = function() { addRow(el); };
+	});
+	each(form.querySelectorAll('.et-list-del'), function(el) {
+		el.onclick = function() { removeRow(el); };
+	});
+	each(form.querySelectorAll('input[type=checkbox]'), function(el) {
+		el.onchange = applyDeps;
+	});
+	each(form.querySelectorAll('select'), function(el) {
+		el.onchange = applyDeps;
+	});
+
+	applyDeps();
+})();
+//]]></script>
+
+<%+footer%>

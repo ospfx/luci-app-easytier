@@ -31,6 +31,10 @@ DAEMON_OBJS := $(patsubst %.c,$(BUILD_DIR)/%.o,$(DAEMON_SRCS))
 CTL_OBJS := $(patsubst %.c,$(BUILD_DIR)/%.o,$(CTL_SRCS))
 ALL_OBJS := $(LIB_OBJS) $(DAEMON_OBJS) $(CTL_OBJS)
 
+# 入口 main() 只属于 easytierd；easytierctl 需要 daemon 的 service 实现（api_service 依赖），
+# 但不能带上 easytierd 的 main，故单独剔除。
+ENTRY_OBJ := $(BUILD_DIR)/daemon/etd_entry.o
+
 .PHONY: all objs link clean check-sym
 
 all: objs
@@ -46,7 +50,7 @@ link: $(BUILD_DIR)/easytierd $(BUILD_DIR)/easytierctl
 $(BUILD_DIR)/easytierd: $(LIB_OBJS) $(DAEMON_OBJS)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^ $(LIBS)
 
-$(BUILD_DIR)/easytierctl: $(LIB_OBJS) $(CTL_OBJS)
+$(BUILD_DIR)/easytierctl: $(LIB_OBJS) $(CTL_OBJS) $(filter-out $(ENTRY_OBJ),$(DAEMON_OBJS))
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^ $(LIBS)
 
 clean:

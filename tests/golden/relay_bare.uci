@@ -1,0 +1,13 @@
+# relay_network=1 但 whitelist 为空 → 输出**裸旗标** --relay-network-whitelist。
+#
+# relay_bare.core.args 推导依据：
+#   513 if [ "$relay_network" = "1" ] ; then
+#   514   if [ ! -z "$whitelist" ] ; then ... else
+#   523     core_cmd="${core_cmd} --relay-network-whitelist"   ← 无参数的裸旗标
+#   553 listenermode=OFF ≠ ON → --no-listener
+#   544 rpc_portal 未配置 → 默认 15888 → -r 15888
+config easytier
+	option etcmd 'etcmd'
+	option relay_network '1'
+	option listenermode 'OFF'
+	option multi_thread '0'

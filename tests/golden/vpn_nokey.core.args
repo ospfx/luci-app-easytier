@@ -1,0 +1,8 @@
+easytier-core
+-r
+15888
+--no-listener
+--multi-thread
+false
+--bind-device
+false

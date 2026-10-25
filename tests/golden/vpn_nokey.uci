@@ -1,0 +1,9 @@
+# VPN 门户用了新写法但没填私钥：2.7.0 起门户必须有私钥，否则门户监听失败会
+# 连带整个实例退出，所以要跳过 --vpn-portal 并写 notes（init.d:564-569）。
+#
+# vpn_nokey.core.args 推导依据：
+#   563-570 case wg://*) → 私钥为空 → 只写日志，不追加 --vpn-portal
+#   544 -r 15888；553 → --no-listener
+config easytier
+	option etcmd 'etcmd'
+	option vpn_portal 'wg://0.0.0.0:11011'

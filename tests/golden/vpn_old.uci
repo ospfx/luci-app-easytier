@@ -1,0 +1,13 @@
+# VPN 门户 2.6.4 旧写法：客户端网段写在 URL path 里（wg://主机:端口/网段）。
+# EasyTier 2.7.0 会直接拒绝并让进程退出，因此必须跳过 --vpn-portal 并写 notes；
+# 但 vpn_portal_clients 的判断是独立的，仍然照常发射（init.d:577）。
+#
+# vpn_old.core.args 推导依据：
+#   558-562 case wg://*/*) → 只写日志，不追加 --vpn-portal
+#   577-585 vpn_portal_clients 一条 → --vpn-portal-client client1=10.14.14.1/24
+#   544 -r 15888；553 → --no-listener
+config easytier
+	option etcmd 'etcmd'
+	option vpn_portal 'wg://0.0.0.0:11011/10.14.14.0/24'
+	option vpn_portal_private_key 'AAAA'
+	list vpn_portal_clients 'client1=10.14.14.1/24'

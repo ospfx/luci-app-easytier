@@ -1,0 +1,30 @@
+# 最小配置：出厂 /etc/config/easytier 的内容（root/etc/config/easytier）
+# 仅补一个 etcmd 默认值（CBI 的 etcmd.default = "etcmd"）。
+#
+# min.core.args 推导依据（init.d 行号 → 结果）：
+#   202-283 get_etconfig() 取默认值：ip_dhcp/multi_thread/bind_device = 0（|| echo 0），
+#           rpc_portal = 15888（|| echo 15888），comp = none，log = off
+#   474-475 ipaddr / ip6addr 为空            → 不输出 -i / --ipv6
+#   476     [ "$ip_dhcp" = "0" ] || -d       → ip_dhcp=0，不输出
+#   477-543 peeradd/proxy_network/exit_nodes/manual_routes/relay_network/
+#           mapped_listeners/port_forward 为空（exit_nodes 的 "0" 走 else 分支，
+#           grep 'list exit_nodes' 无输出，等于不产生参数）→ 不输出
+#   544     -r $rpc_portal                   → -r 15888
+#   546-551 tcp/ws/wss/wg/quic_port 全空     → 不输出任何 -l
+#   553     [ "$listenermode" = "ON" ] || --no-listener
+#           listenermode 未配置（空）→ 输出 --no-listener
+#   587     [ "$default_protocol" = "-" ] || --default-protocol $default_protocol
+#           旧实现此处会输出**裸** --default-protocol（easytier-core 会因缺少参数
+#           直接报错）；C 版按"空值/`-` 均不输出"处理，见交付报告第 5 节
+#   590-595 multi_thread=0                   → --multi-thread false
+#   606-607 bind_device=0 → 第 1 行跳过、第 2 行输出 --bind-device false
+#   605     comp=none                        → 不输出 --compression
+config easytier
+	option enabled '0'
+	option easytierbin '/usr/bin/easytier-core'
+	option auto_config_interface '1'
+	option auto_config_firewall '1'
+	option interface_netmask '255.0.0.0'
+	option web_enabled '0'
+	option webbin '/usr/bin/easytier-web'
+	option etcmd 'etcmd'

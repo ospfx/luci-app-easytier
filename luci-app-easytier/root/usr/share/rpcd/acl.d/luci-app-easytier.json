@@ -3,10 +3,16 @@
     "description": "Grant UCI access for luci-app-easytier",
     "read": {
       "uci": [ "easytier" ],
+      "file": {
+        "/usr/sbin/easytierctl": [ "exec" ]
+      },
       "cgi-io": [ "upload" ]
     },
     "write": {
-      "uci": [ "easytier" ]
+      "uci": [ "easytier" ],
+      "file": {
+        "/usr/sbin/easytierctl": [ "exec" ]
+      }
     }
   }
 }

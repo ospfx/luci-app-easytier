@@ -1,0 +1,9 @@
+# etcmd=config：配置文件启动方式。
+#
+# config_mode.core.args 推导依据：
+#   461-463 if [ "$etcmd" = "config" ] → check_config()
+#   180     ${easytierbin} -c ${config_file} --console-log-level ${log}
+#           config_file 固定为 /etc/easytier/config.toml（init.d:155）
+#   --console-log-level 由调用方追加，不在本函数拼装
+config easytier
+	option etcmd 'config'
