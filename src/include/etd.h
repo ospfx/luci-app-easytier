@@ -31,6 +31,9 @@
 #ifndef ET_FILE_MACHINE_ID
 #define ET_FILE_MACHINE_ID "/etc/easytier/et_machine_id"
 #endif
+#ifndef ET_PATH_DAEMON
+#define ET_PATH_DAEMON "/usr/sbin/easytierd"
+#endif
 #ifndef ET_DIR_ET
 #define ET_DIR_ET "/etc/easytier"
 #endif

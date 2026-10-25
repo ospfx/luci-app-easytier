@@ -1522,3 +1522,1336 @@ msgstr ""
 
 msgid "Allow this web gateway instance to relay data traffic"
 msgstr ""
+
+msgid "A simple, secure, decentralized VPN solution for intranet penetration, implemented in Rust using the Tokio framework. Project URL: <a href=\"https://github.com/EasyTier/EasyTier\" target=\"_blank\">github.com/EasyTier/EasyTier</a>&nbsp;&nbsp;<a href=\"http://easytier.cn\" target=\"_blank\">Official Documentation</a>&nbsp;&nbsp;<a href=\"http://qm.qq.com/cgi-bin/qm/qr?_wv=1027&k=jhP2Z4UsEZ8wvfGPLrs0VwLKn_uz0Q_p&authKey=OGKSQLfg61YPCpVQuvx%2BxE7hUKBVBEVi9PljrDKbHlle6xqOXx8sOwPPTncMambK&noverify=0&group_code=949700262\" target=\"_blank\">QQ Group</a>&nbsp;&nbsp;"
+msgstr ""
+
+msgid "ACL"
+msgstr ""
+
+msgid "ACL Stats"
+msgstr ""
+
+msgid "API Listen Address"
+msgstr ""
+
+msgid "API listen address, 0.0.0.0 means all interfaces and is not passed explicitly (--api-server-addr parameter)"
+msgstr ""
+
+msgid "API listen port (-a parameter)"
+msgstr ""
+
+msgid "Access other nodes using domain names, modifies your system DNS settings (--accept-dns parameter)"
+msgstr ""
+
+msgid "Action"
+msgstr ""
+
+msgid "Additional command-line arguments passed to the backend process, split on whitespace"
+msgstr ""
+
+msgid "Address"
+msgstr ""
+
+msgid "Address Restricted"
+msgstr ""
+
+msgid "All download attempts failed"
+msgstr ""
+
+msgid "Allow"
+msgstr ""
+
+msgid "Allow Auto-create User"
+msgstr ""
+
+msgid "Allow auto create user when connecting (--allow-auto-create-user parameter)"
+msgstr ""
+
+msgid "Allow relaying kcp packets from foreign networks (--enable-relay-foreign-network-kcp parameter)"
+msgstr ""
+
+msgid "Allow relaying quic packets from foreign networks (--enable-relay-foreign-network-quic parameter)"
+msgstr ""
+
+msgid "Any"
+msgstr ""
+
+msgid "Are you sure you want to reset the database?"
+msgstr ""
+
+msgid "Attempt to forward traffic via the lowest latency path (--latency-first parameter)"
+msgstr ""
+
+msgid "Automatically create local user when easytier-core connects with an unknown username"
+msgstr ""
+
+msgid "Available space"
+msgstr ""
+
+msgid "Base URL of the webhook endpoint for token validation and event delivery"
+msgstr ""
+
+msgid "Base64 encoded 32-byte WireGuard private key of the portal. Required since EasyTier 2.7.0, handed to easytier-core through the ET_VPN_PORTAL_PRIVATE_KEY environment variable"
+msgstr ""
+
+msgid "Binary uploaded successfully to"
+msgstr ""
+
+msgid "Bind the connector socket to the physical device (--bind-device true|false parameter)"
+msgstr ""
+
+msgid "Burst Limit"
+msgstr ""
+
+msgid "Bytes"
+msgstr ""
+
+msgid "Cache Max Size"
+msgstr ""
+
+msgid "Cache Size"
+msgstr ""
+
+msgid "Can also be set via OIDC_CLIENT_SECRET environment variable"
+msgstr ""
+
+msgid "Cancel Download"
+msgstr ""
+
+msgid "Cancelling download, may take up to 5 minutes to stop the current task"
+msgstr ""
+
+msgid "Caused by"
+msgstr ""
+
+msgid "Client Config End"
+msgstr ""
+
+msgid "Client Config Start"
+msgstr ""
+
+msgid "Close"
+msgstr ""
+
+msgid "Command Line"
+msgstr ""
+
+msgid "Compression RX After"
+msgstr ""
+
+msgid "Compression RX Before"
+msgstr ""
+
+msgid "Compression TX After"
+msgstr ""
+
+msgid "Compression TX Before"
+msgstr ""
+
+msgid "Compression algorithm to use, 'none' means no --compression parameter (--compression parameter)"
+msgstr ""
+
+msgid "Configuration File Content"
+msgstr ""
+
+msgid "Connected"
+msgstr ""
+
+msgid "Connected Clients"
+msgstr ""
+
+msgid "Connecting"
+msgstr ""
+
+msgid "Connection Information"
+msgstr ""
+
+msgid "Connection Track"
+msgstr ""
+
+msgid "Connection refused"
+msgstr ""
+
+msgid "Connector"
+msgstr ""
+
+msgid "Connectors"
+msgstr ""
+
+msgid "Contributors"
+msgstr ""
+
+msgid "Convert TCP traffic to KCP traffic (--enable-kcp-proxy parameter)"
+msgstr ""
+
+msgid "Created"
+msgstr ""
+
+msgid "Custom Input"
+msgstr ""
+
+msgid "Custom TCP STUN servers used for NAT type detection and hole punching (--tcp-stun-servers parameter)"
+msgstr ""
+
+msgid "Custom UDP STUN servers used for NAT type detection and hole punching (--stun-servers parameter)"
+msgstr ""
+
+msgid "Custom name for the virtual TUN interface (--dev-name parameter)"
+msgstr ""
+
+msgid "Database Reset Successful"
+msgstr ""
+
+msgid "Database reset successfully"
+msgstr ""
+
+msgid "Default / Configuration File / Web Configuration"
+msgstr ""
+
+msgid "Default / None"
+msgstr ""
+
+msgid "Default API server URL returned to clients (--api-host parameter)"
+msgstr ""
+
+msgid "Destination"
+msgstr ""
+
+msgid "Destination Address"
+msgstr ""
+
+msgid "Destination IP"
+msgstr ""
+
+msgid "Destination IPs"
+msgstr ""
+
+msgid "Destination Peer ID"
+msgstr ""
+
+msgid "Direct"
+msgstr ""
+
+msgid "Direct Peers"
+msgstr ""
+
+msgid "Direction"
+msgstr ""
+
+msgid "Disable P2P communication, only use nodes specified by -p (--disable-p2p parameter)"
+msgstr ""
+
+msgid "Disable PKCE"
+msgstr ""
+
+msgid "Disable PKCE (Proof Key for Code Exchange) for OIDC authentication"
+msgstr ""
+
+msgid "Disable PKCE for OIDC (--oidc-disable-pkce parameter, requires OIDC enabled)"
+msgstr ""
+
+msgid "Disable UDP NAT hole punching for symmetric NAT (--disable-sym-hole-punching parameter)"
+msgstr ""
+
+msgid "Disable User Registration"
+msgstr ""
+
+msgid "Disable encryption for peer communication, all nodes must disable it together (-u parameter)"
+msgstr ""
+
+msgid "Disable relay kcp packets (--disable-relay-kcp parameter)"
+msgstr ""
+
+msgid "Disable relaying quic packets (--disable-relay-quic parameter)"
+msgstr ""
+
+msgid "Disable user registration (--disable-registration parameter)"
+msgstr ""
+
+msgid "Disallow other nodes from using KCP proxy TCP streams to this node (--disable-kcp-input parameter)"
+msgstr ""
+
+msgid "Disconnected"
+msgstr ""
+
+msgid "Do not allow other nodes to use QUIC to proxy tcp streams to this node (--disable-quic-input parameter)"
+msgstr ""
+
+msgid "Do not create a TUN device (--no-tun parameter)"
+msgstr ""
+
+msgid "Domain"
+msgstr ""
+
+msgid "Download"
+msgstr ""
+
+msgid "Download Successful"
+msgstr ""
+
+msgid "Download Version"
+msgstr ""
+
+msgid "Download and installation completed"
+msgstr ""
+
+msgid "Download cancelled"
+msgstr ""
+
+msgid "Download completed successfully"
+msgstr ""
+
+msgid "Download completed, extracting..."
+msgstr ""
+
+msgid "Download completed. Restart service now?"
+msgstr ""
+
+msgid "Download failed"
+msgstr ""
+
+msgid "Download mirrors tried in order, empty means the built-in default list"
+msgstr ""
+
+msgid "Download specified version from GitHub and install to specified path"
+msgstr ""
+
+msgid "Download task already exists"
+msgstr ""
+
+msgid "Download task already exists, continuing..."
+msgstr ""
+
+msgid "Downloaded package is incomplete, missing required files"
+msgstr ""
+
+msgid "Downloading with"
+msgstr ""
+
+msgid "Downloading..."
+msgstr ""
+
+msgid "Drop (no response)"
+msgstr ""
+
+msgid "ERROR: Wireguard VPN Portal Not Started"
+msgstr ""
+
+msgid "EasyTier Status"
+msgstr ""
+
+msgid "Easytier Core Path"
+msgstr ""
+
+msgid "Easytier Web Path"
+msgstr ""
+
+msgid "Enable OIDC (OpenID Connect) for single sign-on authentication"
+msgstr ""
+
+msgid "Enable OIDC Single Sign-On"
+msgstr ""
+
+msgid "Enable OIDC single sign-on for the web console"
+msgstr ""
+
+msgid "Enable Webhook Integration"
+msgstr ""
+
+msgid "Enable a SOCKS5 server, leave blank to disable (--socks5 parameter)"
+msgstr ""
+
+msgid "Enable multithreaded operation; always passed explicitly as --multi-thread true|false"
+msgstr ""
+
+msgid "Enable webhook for token validation and event delivery"
+msgstr ""
+
+msgid "Enable webhook integration for the web console"
+msgstr ""
+
+msgid "Enabled"
+msgstr ""
+
+msgid "Encryption algorithm, default is aes-gcm and is not passed explicitly (--encryption-algorithm parameter)"
+msgstr ""
+
+msgid "Error Type"
+msgstr ""
+
+msgid "Established"
+msgstr ""
+
+msgid "Exit nodes to forward all traffic through, order defines priority (--exit-nodes parameter)"
+msgstr ""
+
+msgid "Export the local network to other peers in the VPN (-n parameter)"
+msgstr ""
+
+msgid "Extraction failed"
+msgstr ""
+
+msgid "Failed to install program"
+msgstr ""
+
+msgid "Failed to move file. Insufficient space or permission denied"
+msgstr ""
+
+msgid "Failed to parse response:"
+msgstr ""
+
+msgid "Failure"
+msgstr ""
+
+msgid "Forward RPC packets from all peer nodes (--relay-all-peer-rpc parameter)"
+msgstr ""
+
+msgid "Forward a local port to a remote port within the virtual network (--port-forward parameter)"
+msgstr ""
+
+msgid "From Instance ID"
+msgstr ""
+
+msgid "Frontend base URL to redirect to after successful OIDC callback"
+msgstr ""
+
+msgid "Full Cone"
+msgstr ""
+
+msgid "GeoIP database path (--geoip-db parameter)"
+msgstr ""
+
+msgid "Get Global Peer Map"
+msgstr ""
+
+msgid "GitHub Proxies"
+msgstr ""
+
+msgid "Global"
+msgstr ""
+
+msgid "Heartbeat timeout in milliseconds (--heartbeat-timeout-ms parameter)"
+msgstr ""
+
+msgid "IP address is assigned by EasyTier automatically (-d parameter)"
+msgstr ""
+
+msgid "IPv4 Address"
+msgstr ""
+
+msgid "IPv6 address of this VPN node, can be combined with IPv4 (--ipv6 parameter)"
+msgstr ""
+
+msgid "IPv6 all"
+msgstr ""
+
+msgid "If the device has insufficient storage space, the upload may fail and existing programs may be deleted. Please ensure adequate free space before uploading."
+msgstr ""
+
+msgid "Initial connected peer nodes (-p parameter)"
+msgstr ""
+
+msgid "Installation completed"
+msgstr ""
+
+msgid "Installing programs..."
+msgstr ""
+
+msgid "Interface IPv4"
+msgstr ""
+
+msgid "Interface IPv6"
+msgstr ""
+
+msgid "Internal Auth Token"
+msgstr ""
+
+msgid "Internal auth token (--internal-auth-token parameter, requires webhook enabled)"
+msgstr ""
+
+msgid "Interval time for the connectivity check, in minutes"
+msgstr ""
+
+msgid "Invalid"
+msgstr ""
+
+msgid "Invalid JSON data"
+msgstr ""
+
+msgid "Invalid Service Name"
+msgstr ""
+
+msgid "Labels"
+msgstr ""
+
+msgid "Last Seen"
+msgstr ""
+
+msgid "Last Update Time"
+msgstr ""
+
+msgid "Latency(ms)"
+msgstr ""
+
+msgid "List Connector Response"
+msgstr ""
+
+msgid "List Mapped Listener Response"
+msgstr ""
+
+msgid "Listen address for the RESTful server"
+msgstr ""
+
+msgid "Listen address for the web dashboard server"
+msgstr ""
+
+msgid "Listener"
+msgstr ""
+
+msgid "Listening protocol of the web console (-p parameter)"
+msgstr ""
+
+msgid "Loading timed out. Please click Refresh to try again."
+msgstr ""
+
+msgid "Loading versions..."
+msgstr ""
+
+msgid "Local"
+msgstr ""
+
+msgid "Log level of easytier-web, 'off' means no --console-log-level"
+msgstr ""
+
+msgid "Loss Rate"
+msgstr ""
+
+msgid "MTU for the TUN device, default is 1380 when unencrypted and 1360 when encrypted"
+msgstr ""
+
+msgid "Manually assign route CIDRs, disables subnet proxying and WireGuard routes (--manual-routes parameter)"
+msgstr ""
+
+msgid "Manually specify the public address of this machine (--mapped-listeners parameter)"
+msgstr ""
+
+msgid "Mapped Destination IP"
+msgstr ""
+
+msgid "Mapped Listener"
+msgstr ""
+
+msgid "Max Port"
+msgstr ""
+
+msgid "Maximum bps limit for foreign network relay, unit BPS (--foreign-relay-bps-limit parameter)"
+msgstr ""
+
+msgid "Maximum inbound bps limit for this network instance, unit BPS (--instance-recv-bps-limit parameter)"
+msgstr ""
+
+msgid "Method Name"
+msgstr ""
+
+msgid "Metric Name"
+msgstr ""
+
+msgid "Min Port"
+msgstr ""
+
+msgid "Minimum heartbeat response time in milliseconds (--heartbeat-min-response-ms parameter)"
+msgstr ""
+
+msgid "Missing version parameter"
+msgstr ""
+
+msgid "NAT Type"
+msgstr ""
+
+msgid "Name"
+msgstr ""
+
+msgid "New Version"
+msgstr ""
+
+msgid "Next Hop Hostname"
+msgstr ""
+
+msgid "Next Hop Hostname Lat First"
+msgstr ""
+
+msgid "Next Hop IPv4"
+msgstr ""
+
+msgid "Next Hop IPv4 Lat First"
+msgstr ""
+
+msgid "Next Hop Latency"
+msgstr ""
+
+msgid "No PAT"
+msgstr ""
+
+msgid "No data available"
+msgstr ""
+
+msgid "No database files found or deletion failed"
+msgstr ""
+
+msgid "No file uploaded"
+msgstr ""
+
+msgid "No x86-32bit program available"
+msgstr ""
+
+msgid "Node ID"
+msgstr ""
+
+msgid "Nodes with a different network name and password are not allowed to handshake or relay (--private-mode parameter)"
+msgstr ""
+
+msgid "None"
+msgstr ""
+
+msgid "Noop"
+msgstr ""
+
+msgid "Not a valid EasyTier program"
+msgstr ""
+
+msgid "Not a valid EasyTier program or architecture mismatch"
+msgstr ""
+
+msgid "Number of threads, only effective when multi-thread is enabled (--multi-thread-count parameter)"
+msgstr ""
+
+msgid "OFF: do not listen on any port, only connect to peer nodes (--no-listener parameter)"
+msgstr ""
+
+msgid "OIDC Client ID"
+msgstr ""
+
+msgid "OIDC Client ID *"
+msgstr ""
+
+msgid "OIDC Client Secret"
+msgstr ""
+
+msgid "OIDC Client Secret *"
+msgstr ""
+
+msgid "OIDC Frontend Base URL"
+msgstr ""
+
+msgid "OIDC Issuer URL"
+msgstr ""
+
+msgid "OIDC Issuer URL *"
+msgstr ""
+
+msgid "OIDC Redirect URL"
+msgstr ""
+
+msgid "OIDC Redirect URL *"
+msgstr ""
+
+msgid "OIDC Scopes"
+msgstr ""
+
+msgid "OIDC Username Claim"
+msgstr ""
+
+msgid "OIDC client id (--oidc-client-id parameter, requires OIDC enabled)"
+msgstr ""
+
+msgid "OIDC client secret (--oidc-client-secret parameter, requires OIDC enabled)"
+msgstr ""
+
+msgid "OIDC frontend base URL (--oidc-frontend-base-url parameter, requires OIDC enabled)"
+msgstr ""
+
+msgid "OIDC issuer URL (--oidc-issuer-url parameter, requires OIDC enabled)"
+msgstr ""
+
+msgid "OIDC redirect URL (--oidc-redirect-url parameter, requires OIDC enabled)"
+msgstr ""
+
+msgid "OIDC scopes to request during login"
+msgstr ""
+
+msgid "OIDC scopes, passed as a single argument (--oidc-scopes parameter, requires OIDC enabled)"
+msgstr ""
+
+msgid "OIDC username claim (--oidc-username-claim parameter, requires OIDC enabled)"
+msgstr ""
+
+msgid "OSPF Route RPC"
+msgstr ""
+
+msgid "One WireGuard client per entry in the form NAME=CIDR (--vpn-portal-client parameter)"
+msgstr ""
+
+msgid "Online Download"
+msgstr ""
+
+msgid "Online Download EasyTier"
+msgstr ""
+
+msgid "Only allow these addresses to access the rpc portal (--rpc-portal-whitelist parameter)"
+msgstr ""
+
+msgid "Only communicate with peers that already establish p2p connection (--p2p-only parameter)"
+msgstr ""
+
+msgid "Only effective when web port differs from API port or addresses differ"
+msgstr ""
+
+msgid "Only forward traffic for whitelisted networks. By default all networks are allowed"
+msgstr ""
+
+msgid "Only try to establish P2P connections when traffic needs to be forwarded (--lazy-p2p parameter)"
+msgstr ""
+
+msgid "Open the API port to WAN"
+msgstr ""
+
+msgid "Open the web service port to WAN"
+msgstr ""
+
+msgid "P2P"
+msgstr ""
+
+msgid "Packets"
+msgstr ""
+
+msgid "Path Latency"
+msgstr ""
+
+msgid "Path Latency Lat First"
+msgstr ""
+
+msgid "Path Length"
+msgstr ""
+
+msgid "Path Length Lat First"
+msgstr ""
+
+msgid "Path of the easytier-core binary"
+msgstr ""
+
+msgid "Path of the easytier-web-embed binary"
+msgstr ""
+
+msgid "Peer Center"
+msgstr ""
+
+msgid "Peer Center RPC"
+msgstr ""
+
+msgid "Peer Center service not available. This feature requires multiple nodes in the network."
+msgstr ""
+
+msgid "Peer ID"
+msgstr ""
+
+msgid "Peer List"
+msgstr ""
+
+msgid "Peer RPC Client RX"
+msgstr ""
+
+msgid "Peer RPC Client TX"
+msgstr ""
+
+msgid "Peer RPC Duration"
+msgstr ""
+
+msgid "Peer RPC Errors"
+msgstr ""
+
+msgid "Peer RPC Server RX"
+msgstr ""
+
+msgid "Peer RPC Server TX"
+msgstr ""
+
+msgid "Peer URL announced by the gateway (--gateway-peer-url parameter)"
+msgstr ""
+
+msgid "Please enter download version"
+msgstr ""
+
+msgid "Port Restricted"
+msgstr ""
+
+msgid "Portal Name"
+msgstr ""
+
+msgid "Ports"
+msgstr ""
+
+msgid "Pre-release"
+msgstr ""
+
+msgid "Preparing download..."
+msgstr ""
+
+msgid "Preparing..."
+msgstr ""
+
+msgid "Prevent new users from registering accounts"
+msgstr ""
+
+msgid "Priority"
+msgstr ""
+
+msgid "Processing uploaded file, please wait..."
+msgstr ""
+
+msgid "Program installation failed, verification failed"
+msgstr ""
+
+msgid "Program is incomplete or architecture mismatch"
+msgstr ""
+
+msgid "Program not found"
+msgstr ""
+
+msgid "Program size"
+msgstr ""
+
+msgid "Protocol"
+msgstr ""
+
+msgid "Protocol Name"
+msgstr ""
+
+msgid "Proxy"
+msgstr ""
+
+msgid "Proxy CIDRs"
+msgstr ""
+
+msgid "Proxy tcp streams with QUIC (--enable-quic-proxy parameter)"
+msgstr ""
+
+msgid "Public IP"
+msgstr ""
+
+msgid "Public IPv4"
+msgstr ""
+
+msgid "Public IPv6"
+msgstr ""
+
+msgid "QUIC listen port (-l quic: parameter)"
+msgstr ""
+
+msgid "RPC portal address, 0 means a random port (-r parameter)"
+msgstr ""
+
+msgid "RX Traffic"
+msgstr ""
+
+msgid "Rate Limit"
+msgstr ""
+
+msgid "Reachable base URL for this easytier-web instance's internal REST API"
+msgstr ""
+
+msgid "Real-time Traffic"
+msgstr ""
+
+msgid "Refresh"
+msgstr ""
+
+msgid "Refreshing..."
+msgstr ""
+
+msgid "Related"
+msgstr ""
+
+msgid "Relay data through the gateway (--gateway-relay-data true parameter)"
+msgstr ""
+
+msgid "Remote device IPs used by the connectivity check"
+msgstr ""
+
+msgid "Report Peers"
+msgstr ""
+
+msgid "Require a P2P connection before forwarding traffic through relays (--need-p2p parameter)"
+msgstr ""
+
+msgid "Required when frontend and API are deployed separately"
+msgstr ""
+
+msgid "Reset Database"
+msgstr ""
+
+msgid "Reset failed"
+msgstr ""
+
+msgid "Response"
+msgstr ""
+
+msgid "Restart EasyTier when all specified IPs fail to ping"
+msgstr ""
+
+msgid "Restart service to apply changes?"
+msgstr ""
+
+msgid "Restricted"
+msgstr ""
+
+msgid "Retry"
+msgstr ""
+
+msgid "Route Cost"
+msgstr ""
+
+msgid "Rules"
+msgstr ""
+
+msgid "Runtime log level: Error < Warning < Info < Debug < Trace, 'off' means no --console-log-level"
+msgstr ""
+
+msgid "SQLite database path (-d parameter)"
+msgstr ""
+
+msgid "STUN"
+msgstr ""
+
+msgid "Server"
+msgstr ""
+
+msgid "Service Name"
+msgstr ""
+
+msgid "Service port of the web console (-c parameter)"
+msgstr ""
+
+msgid "Set SO_MARK on all underlay sockets, Linux only (--socket-mark parameter)"
+msgstr ""
+
+msgid "Shared secret used to authenticate outbound webhook calls"
+msgstr ""
+
+msgid "Some"
+msgstr ""
+
+msgid "Source"
+msgstr ""
+
+msgid "Source Address"
+msgstr ""
+
+msgid "Source IPs"
+msgstr ""
+
+msgid "Source Peer ID"
+msgstr ""
+
+msgid "Source Ports"
+msgstr ""
+
+msgid "Stable"
+msgstr ""
+
+msgid "Stable identifier for this easytier-web instance when routing webhook callbacks"
+msgstr ""
+
+msgid "Start Time"
+msgstr ""
+
+msgid "Start easytier-core on boot"
+msgstr ""
+
+msgid "Start easytier-web-embed on boot"
+msgstr ""
+
+msgid "Starting download..."
+msgstr ""
+
+msgid "State"
+msgstr ""
+
+msgid "Stateful"
+msgstr ""
+
+msgid "Statistics"
+msgstr ""
+
+msgid "Success"
+msgstr ""
+
+msgid "Successfully installed"
+msgstr ""
+
+msgid "Supports comma-separated values"
+msgstr ""
+
+msgid "Symmetric"
+msgstr ""
+
+msgid "Sync Route Info"
+msgstr ""
+
+msgid "System lacks unzip package, cannot extract zip archive"
+msgstr ""
+
+msgid "System lacks unzip, cannot download and extract"
+msgstr ""
+
+msgid "TCP NAT Type"
+msgstr ""
+
+msgid "TCP Proxy Connect"
+msgstr ""
+
+msgid "TCP port whitelist, supports single ports and ranges (--tcp-whitelist parameter)"
+msgstr ""
+
+msgid "TCP/UDP listen port, e.g. 11010 (writes both -l tcp: and -l udp:)"
+msgstr ""
+
+msgid "TX Traffic"
+msgstr ""
+
+msgid "The IPv4 address of this VPN node, empty means forward-only, no TUN device (-i parameter)"
+msgstr ""
+
+msgid "The OIDC claim to use as the local username"
+msgstr ""
+
+msgid "The OIDC client ID"
+msgstr ""
+
+msgid "The OIDC client secret"
+msgstr ""
+
+msgid "The OIDC issuer URL for single sign-on authentication"
+msgstr ""
+
+msgid "The OIDC redirect URL (callback URL), must match exactly what is registered with your Identity Provider"
+msgstr ""
+
+msgid "The URL of the API server, used for connecting the web frontend"
+msgstr ""
+
+msgid "The default protocol used when connecting to peer nodes (--default-protocol parameter), '-' or empty means use the core default"
+msgstr ""
+
+msgid "This will delete all database files and cannot be recovered"
+msgstr ""
+
+msgid "Timeout"
+msgstr ""
+
+msgid "To Instance ID"
+msgstr ""
+
+msgid "Token for X-Internal-Auth header"
+msgstr ""
+
+msgid "Top level DNS zone used by Magic DNS, default is et.net (--tld-dns-zone parameter)"
+msgstr ""
+
+msgid "Total Download"
+msgstr ""
+
+msgid "Total Upload"
+msgstr ""
+
+msgid "Traffic Bytes Foreign Forward Forwarded"
+msgstr ""
+
+msgid "Traffic Bytes Foreign Forward RX"
+msgstr ""
+
+msgid "Traffic Bytes Foreign Forward TX"
+msgstr ""
+
+msgid "Traffic Bytes Forwarded"
+msgstr ""
+
+msgid "Traffic Bytes RX"
+msgstr ""
+
+msgid "Traffic Bytes RX By Instance"
+msgstr ""
+
+msgid "Traffic Bytes Self RX"
+msgstr ""
+
+msgid "Traffic Bytes Self TX"
+msgstr ""
+
+msgid "Traffic Bytes TX"
+msgstr ""
+
+msgid "Traffic Bytes TX By Instance"
+msgstr ""
+
+msgid "Traffic Control Bytes Forwarded"
+msgstr ""
+
+msgid "Traffic Control Bytes RX"
+msgstr ""
+
+msgid "Traffic Control Bytes RX By Instance"
+msgstr ""
+
+msgid "Traffic Control Bytes TX"
+msgstr ""
+
+msgid "Traffic Control Bytes TX By Instance"
+msgstr ""
+
+msgid "Traffic Control Packets Forwarded"
+msgstr ""
+
+msgid "Traffic Control Packets RX"
+msgstr ""
+
+msgid "Traffic Control Packets RX By Instance"
+msgstr ""
+
+msgid "Traffic Control Packets TX"
+msgstr ""
+
+msgid "Traffic Control Packets TX By Instance"
+msgstr ""
+
+msgid "Traffic Packets Foreign Forward Forwarded"
+msgstr ""
+
+msgid "Traffic Packets Foreign Forward RX"
+msgstr ""
+
+msgid "Traffic Packets Foreign Forward TX"
+msgstr ""
+
+msgid "Traffic Packets Forwarded"
+msgstr ""
+
+msgid "Traffic Packets RX"
+msgstr ""
+
+msgid "Traffic Packets RX By Instance"
+msgstr ""
+
+msgid "Traffic Packets Self RX"
+msgstr ""
+
+msgid "Traffic Packets Self TX"
+msgstr ""
+
+msgid "Traffic Packets TX"
+msgstr ""
+
+msgid "Traffic Packets TX By Instance"
+msgstr ""
+
+msgid "Traffic permission rules between network zones: etfwlan, etfwwan, lanfwet, wanfwet"
+msgstr ""
+
+msgid "Transport Type"
+msgstr ""
+
+msgid "Trying download URL..."
+msgstr ""
+
+msgid "Tunnel Protocol"
+msgstr ""
+
+msgid "Turn off automatic UPnP/NAT-PMP port mapping (--disable-upnp parameter)"
+msgstr ""
+
+msgid "UDP Broadcast Relay Packets Captured"
+msgstr ""
+
+msgid "UDP Broadcast Relay Packets Forward Failed"
+msgstr ""
+
+msgid "UDP Broadcast Relay Packets Forwarded"
+msgstr ""
+
+msgid "UDP Broadcast Relay Packets Ignored"
+msgstr ""
+
+msgid "UDP NAT Type"
+msgstr ""
+
+msgid "UDP Stun Type"
+msgstr ""
+
+msgid "UDP port whitelist, supports single ports and ranges (--udp-whitelist parameter)"
+msgstr ""
+
+msgid "URL"
+msgstr ""
+
+msgid "Unable to detect CPU architecture"
+msgstr ""
+
+msgid "Unable to query disk space"
+msgstr ""
+
+msgid "Unspecified"
+msgstr ""
+
+msgid "Use a public shared node to discover peer nodes (-e parameter)"
+msgstr ""
+
+msgid "Use the system kernel to forward subnet proxy packets (--proxy-forward-by-system parameter)"
+msgstr ""
+
+msgid "Used to identify the VPN node instance on the same machine (-m parameter)"
+msgstr ""
+
+msgid "VPN Portal"
+msgstr ""
+
+msgid "VPN Portal Client"
+msgstr ""
+
+msgid "VPN Portal Client Bytes RX"
+msgstr ""
+
+msgid "VPN Portal Client Bytes TX"
+msgstr ""
+
+msgid "VPN Portal Client Packets RX"
+msgstr ""
+
+msgid "VPN Portal Client Packets TX"
+msgstr ""
+
+msgid "Value"
+msgstr ""
+
+msgid "Verifying programs..."
+msgstr ""
+
+msgid "Version used when the latest release cannot be queried"
+msgstr ""
+
+msgid "Virtual IP"
+msgstr ""
+
+msgid "Virtual Network Interface"
+msgstr ""
+
+msgid "WS listen port, e.g. 11011 (-l ws: parameter)"
+msgstr ""
+
+msgid "WSS listen port, e.g. 11012 (-l wss: parameter)"
+msgstr ""
+
+msgid "Web Instance API Base URL"
+msgstr ""
+
+msgid "Web Instance ID"
+msgstr ""
+
+msgid "Web Listen Address"
+msgstr ""
+
+msgid "Web configuration server address (-w parameter). Since EasyTier 2.7.0 a full URL is required, e.g. udp://config-server.easytier.cn:22020/username"
+msgstr ""
+
+msgid "Web instance API base URL (--web-instance-api-base-url parameter, requires webhook enabled)"
+msgstr ""
+
+msgid "Web instance id (--web-instance-id parameter, requires webhook enabled)"
+msgstr ""
+
+msgid "Web interface port, empty disables the built-in web UI (--no-web / -l parameter)"
+msgstr ""
+
+msgid "Web listen address, 0.0.0.0 means all interfaces and is not passed explicitly (--web-server-addr parameter)"
+msgstr ""
+
+msgid "Webhook Secret"
+msgstr ""
+
+msgid "Webhook URL"
+msgstr ""
+
+msgid "Webhook URL (--webhook-url parameter, requires webhook enabled)"
+msgstr ""
+
+msgid "Webhook secret (--webhook-secret parameter, requires webhook enabled)"
+msgstr ""
+
+msgid "When set, API requests with this header bypass session authentication"
+msgstr ""
+
+msgid "When set, incoming tokens are validated via this webhook before local fallback"
+msgstr ""
+
+msgid "Wildcard strings such as '*' or 'def*', empty disables forwarding (--relay-network-whitelist parameter)"
+msgstr ""
+
+msgid "WireGuard"
+msgstr ""
+
+msgid "WireGuard VPN portal listen address. Since EasyTier 2.7.0 only wg://HOST:PORT is accepted, the old wg://HOST:PORT/CIDR form is skipped (--vpn-portal parameter)"
+msgstr ""
+
+msgid "WireGuard listen port, e.g. 11011 (-l wg: parameter)"
+msgstr ""
+
+msgid "all interfaces"
+msgstr ""
+
+msgid "binary file(s)"
+msgstr ""
+
+msgid "cannot_be_a_base"
+msgstr ""
+
+msgid "easytier-web is not used by this plugin, please upload easytier-web-embed"
+msgstr ""
+
+msgid "failed to connect to server"
+msgstr ""
+
+msgid "failed to get peer center client"
+msgstr ""
+
+msgid "failed to get peer manager client"
+msgstr ""
+
+msgid "fragment"
+msgstr ""
+
+msgid "host"
+msgstr ""
+
+msgid "localhost only"
+msgstr ""
+
+msgid "no running instances found"
+msgstr ""
+
+msgid "password"
+msgstr ""
+
+msgid "path"
+msgstr ""
+
+msgid "port"
+msgstr ""
+
+msgid "query"
+msgstr ""
+
+msgid "scheme"
+msgstr ""
+
+msgid "username"
+msgstr ""
+

@@ -34,6 +34,11 @@ for c in gcc g++ make cmake zstd pkg-config git curl tar; do
 done
 [ -f /usr/include/json-c/json.h ] || missing="$missing libjson-c-dev"
 [ -f /usr/include/openssl/ssl.h ] || missing="$missing libssl-dev"
+# OpenWrt SDK 的 prerequisites 检查项（容器被回收后 apt 包会丢，必须一并检测）
+[ -f /usr/include/ncurses.h ] || missing="$missing libncurses-dev"
+command -v gawk >/dev/null 2>&1 || missing="$missing gawk"
+command -v python3 >/dev/null 2>&1 || missing="$missing python3"
+command -v lua5.1 >/dev/null 2>&1 || missing="$missing lua5.1"
 
 if [ -n "$missing" ]; then
     log "安装基础工具链（缺失:$missing）..."
@@ -41,8 +46,9 @@ if [ -n "$missing" ]; then
     apt-get update -qq 2>&1 | tail -2 || true
     apt-get install -y -qq --no-install-recommends \
         build-essential cmake pkg-config git curl wget ca-certificates \
-        zstd xz-utils unzip zip rsync file \
-        libjson-c-dev libssl-dev zlib1g-dev 2>&1 | tail -3
+        zstd xz-utils unzip zip rsync file gawk \
+        libjson-c-dev libssl-dev zlib1g-dev libncurses-dev \
+        python3 lua5.1 2>&1 | tail -3
 else
     log "基础工具链已存在"
 fi

@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/wait.h>
 
 static void usage(FILE *fp)
 {
@@ -80,14 +81,23 @@ static int do_service(int argc, char **argv)
 		usage(stderr);
 		return 2;
 	}
-	/* 服务生命周期实现在 easytierd 里，这里只做转发，避免逻辑双份 */
+	/* 服务生命周期实现在 easytierd 里，这里只做转发，避免逻辑双份。
+	 * 逐个参数单独 shell 转义后再拼接 —— 若把整串当成一个单词转义，
+	 * 会被当成单个可执行文件名而报 "not found"。 */
 	et_buf cmd;
 	et_buf_init(&cmd);
-	et_buf_add(&cmd, "/usr/sbin/easytierd service ");
-	et_buf_add(&cmd, argv[0]);
-	char *q = et_shell_quote(cmd.p);
-	int rc = system(q);
-	free(q);
+	et_buf_add(&cmd, ET_PATH_DAEMON);
+	for (int i = 0; i < argc; i++) {
+		char *q = et_shell_quote(argv[i]);
+		if (!q) {
+			et_buf_free(&cmd);
+			return 1;
+		}
+		et_buf_add(&cmd, " ");
+		et_buf_add(&cmd, q);
+		free(q);
+	}
+	int rc = system(cmd.p);
 	et_buf_free(&cmd);
 	if (rc < 0)
 		return 1;

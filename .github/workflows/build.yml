@@ -88,7 +88,7 @@ jobs:
         env:
           ARCH: ${{ matrix.arch }}-${{ matrix.sdk }}
           FEEDNAME: packages_ci
-          PACKAGES: easytier easytier-noweb luci-app-easytier
+          PACKAGES: easytier easytier-noweb easytierd luci-app-easytier
           #NO_DEFAULT_FEEDS: 1
           NO_REFRESH_CHECK: 1
           NO_SHFMT_CHECK: 1

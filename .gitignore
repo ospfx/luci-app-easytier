@@ -2,3 +2,4 @@
 .toolchain/
 src/build/
 *.o
+dist/

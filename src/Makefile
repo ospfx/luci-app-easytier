@@ -10,7 +10,7 @@
 CC ?= gcc
 BUILD_DIR ?= build
 STAGING ?=
-LIBS ?= -lubus -lubox -lblobmsg_json -luci -ljson-c
+LIBS ?= -luci -ljson-c
 
 WARN := -Wall -Wextra -Werror -Wno-unused-parameter
 CFLAGS ?= -O2 -g

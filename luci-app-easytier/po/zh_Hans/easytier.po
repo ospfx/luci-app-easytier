@@ -2386,3 +2386,433 @@ msgstr "网关转发数据"
 
 msgid "Allow this web gateway instance to relay data traffic"
 msgstr "允许本 Web 网关实例转发数据流量"
+
+msgid "Easytier Core Path"
+msgstr "easytier-core 程序路径"
+
+msgid "Easytier Web Path"
+msgstr "easytier-web 程序路径"
+
+msgid "GitHub Proxies"
+msgstr "GitHub 加速镜像"
+
+msgid "OIDC Issuer URL *"
+msgstr "OIDC 颁发者 URL *"
+
+msgid "OIDC Client ID *"
+msgstr "OIDC 客户端 ID *"
+
+msgid "OIDC Client Secret *"
+msgstr "OIDC 客户端密钥 *"
+
+msgid "OIDC Redirect URL *"
+msgstr "OIDC 回调 URL *"
+
+msgid "The IPv4 address of this VPN node, empty means forward-only, no TUN device (-i parameter)"
+msgstr "此 VPN 节点的 IPv4 地址，留空表示只做转发、不创建 TUN 设备（-i 参数）"
+
+msgid "IPv6 address of this VPN node, can be combined with IPv4 (--ipv6 parameter)"
+msgstr "此 VPN 节点的 IPv6 地址，可以和 IPv4 一起配置（--ipv6 参数）"
+
+msgid "IP address is assigned by EasyTier automatically (-d parameter)"
+msgstr "由 EasyTier 自动分配 IP 地址（-d 参数）"
+
+msgid "Initial connected peer nodes (-p parameter)"
+msgstr "初始连接的对等节点（-p 参数）"
+
+msgid "Export the local network to other peers in the VPN (-n parameter)"
+msgstr "把本地网段发布给 VPN 里的其他节点（-n 参数）"
+
+msgid "Exit nodes to forward all traffic through, order defines priority (--exit-nodes parameter)"
+msgstr "通过这些出口节点转发全部流量，顺序即优先级（--exit-nodes 参数）"
+
+msgid "Manually assign route CIDRs, disables subnet proxying and WireGuard routes (--manual-routes parameter)"
+msgstr "手动指定路由 CIDR，会关闭子网代理和 WireGuard 路由（--manual-routes 参数）"
+
+msgid "Only forward traffic for whitelisted networks. By default all networks are allowed"
+msgstr "只转发白名单网络的流量，默认允许所有网络"
+
+msgid "Wildcard strings such as '*' or 'def*', empty disables forwarding (--relay-network-whitelist parameter)"
+msgstr "支持 '*'、'def*' 这类通配符，留空则不转发（--relay-network-whitelist 参数）"
+
+msgid "Manually specify the public address of this machine (--mapped-listeners parameter)"
+msgstr "手动指定本机的公网地址（--mapped-listeners 参数）"
+
+msgid "Forward a local port to a remote port within the virtual network (--port-forward parameter)"
+msgstr "把本地端口转发到虚拟网络内其他节点的端口（--port-forward 参数）"
+
+msgid "RPC portal address, 0 means a random port (-r parameter)"
+msgstr "RPC 门户地址，填 0 表示使用随机端口（-r 参数）"
+
+msgid "Only allow these addresses to access the rpc portal (--rpc-portal-whitelist parameter)"
+msgstr "只允许这些地址访问 RPC 门户（--rpc-portal-whitelist 参数）"
+
+msgid "TCP/UDP listen port, e.g. 11010 (writes both -l tcp: and -l udp:)"
+msgstr "TCP/UDP 监听端口，例如 11010（会同时生成 -l tcp: 和 -l udp:）"
+
+msgid "WS listen port, e.g. 11011 (-l ws: parameter)"
+msgstr "WS 监听端口，例如 11011（-l ws: 参数）"
+
+msgid "WSS listen port, e.g. 11012 (-l wss: parameter)"
+msgstr "WSS 监听端口，例如 11012（-l wss: 参数）"
+
+msgid "WireGuard listen port, e.g. 11011 (-l wg: parameter)"
+msgstr "WireGuard 监听端口，例如 11011（-l wg: 参数）"
+
+msgid "QUIC listen port (-l quic: parameter)"
+msgstr "QUIC 监听端口（-l quic: 参数）"
+
+msgid "Use a public shared node to discover peer nodes (-e parameter)"
+msgstr "使用公共共享节点来发现对等节点（-e 参数）"
+
+msgid "OFF: do not listen on any port, only connect to peer nodes (--no-listener parameter)"
+msgstr "OFF：不监听任何端口，只主动连接对等节点（--no-listener 参数）"
+
+msgid "Used to identify the VPN node instance on the same machine (-m parameter)"
+msgstr "用于区分同一台机器上的 VPN 节点实例（-m 参数）"
+
+msgid "WireGuard VPN portal listen address. Since EasyTier 2.7.0 only wg://HOST:PORT is accepted, the old wg://HOST:PORT/CIDR form is skipped (--vpn-portal parameter)"
+msgstr "WireGuard VPN 门户的监听地址。自 EasyTier 2.7.0 起只接受 wg://主机:端口 形式，旧的 wg://主机:端口/CIDR 写法会被忽略（--vpn-portal 参数）"
+
+msgid "One WireGuard client per entry in the form NAME=CIDR (--vpn-portal-client parameter)"
+msgstr "每条按 NAME=CIDR 的格式填写一个 WireGuard 客户端（--vpn-portal-client 参数）"
+
+msgid "Base64 encoded 32-byte WireGuard private key of the portal. Required since EasyTier 2.7.0, handed to easytier-core through the ET_VPN_PORTAL_PRIVATE_KEY environment variable"
+msgstr "门户的 WireGuard 私钥，32 字节经 Base64 编码。自 EasyTier 2.7.0 起必填，通过 ET_VPN_PORTAL_PRIVATE_KEY 环境变量传给 easytier-core"
+
+msgid "MTU for the TUN device, default is 1380 when unencrypted and 1360 when encrypted"
+msgstr "TUN 设备的 MTU，默认不加密时 1380、加密时 1360"
+
+msgid "The default protocol used when connecting to peer nodes (--default-protocol parameter), '-' or empty means use the core default"
+msgstr "连接对等节点时使用的默认协议（--default-protocol 参数），填 '-' 或留空表示用 easytier-core 的默认值"
+
+msgid "Custom name for the virtual TUN interface (--dev-name parameter)"
+msgstr "自定义虚拟 TUN 网卡的名称（--dev-name 参数）"
+
+msgid "Disable encryption for peer communication, all nodes must disable it together (-u parameter)"
+msgstr "关闭节点之间的通信加密，所有节点必须一起关闭（-u 参数）"
+
+msgid "Enable multithreaded operation; always passed explicitly as --multi-thread true|false"
+msgstr "启用多线程运行；始终显式下发为 --multi-thread true|false"
+
+msgid "Number of threads, only effective when multi-thread is enabled (--multi-thread-count parameter)"
+msgstr "线程数，只在启用多线程后生效（--multi-thread-count 参数）"
+
+msgid "Do not create a TUN device (--no-tun parameter)"
+msgstr "不创建 TUN 设备（--no-tun 参数）"
+
+msgid "Attempt to forward traffic via the lowest latency path (--latency-first parameter)"
+msgstr "尽量走延迟最低的路径转发流量（--latency-first 参数）"
+
+msgid "Disable P2P communication, only use nodes specified by -p (--disable-p2p parameter)"
+msgstr "禁用 P2P 通信，只使用 -p 指定的节点（--disable-p2p 参数）"
+
+msgid "Forward RPC packets from all peer nodes (--relay-all-peer-rpc parameter)"
+msgstr "转发所有对等节点的 RPC 数据包（--relay-all-peer-rpc 参数）"
+
+msgid "Enable a SOCKS5 server, leave blank to disable (--socks5 parameter)"
+msgstr "启用 SOCKS5 服务器，留空则关闭（--socks5 参数）"
+
+msgid "Compression algorithm to use, 'none' means no --compression parameter (--compression parameter)"
+msgstr "使用的压缩算法，'none' 表示不下发 --compression 参数（--compression 参数）"
+
+msgid "Bind the connector socket to the physical device (--bind-device true|false parameter)"
+msgstr "把连接用的套接字绑定到物理网卡（--bind-device true|false 参数）"
+
+msgid "Convert TCP traffic to KCP traffic (--enable-kcp-proxy parameter)"
+msgstr "把 TCP 流量转换成 KCP 流量（--enable-kcp-proxy 参数）"
+
+msgid "Disallow other nodes from using KCP proxy TCP streams to this node (--disable-kcp-input parameter)"
+msgstr "不允许其他节点通过 KCP 把 TCP 流代理到本节点（--disable-kcp-input 参数）"
+
+msgid "Use the system kernel to forward subnet proxy packets (--proxy-forward-by-system parameter)"
+msgstr "用系统内核转发子网代理的数据包（--proxy-forward-by-system 参数）"
+
+msgid "Access other nodes using domain names, modifies your system DNS settings (--accept-dns parameter)"
+msgstr "用域名访问其他节点，会修改系统的 DNS 设置（--accept-dns 参数）"
+
+msgid "Nodes with a different network name and password are not allowed to handshake or relay (--private-mode parameter)"
+msgstr "网络名称或密码不同的节点不允许握手和中转（--private-mode 参数）"
+
+msgid "Proxy tcp streams with QUIC (--enable-quic-proxy parameter)"
+msgstr "用 QUIC 代理 TCP 流（--enable-quic-proxy 参数）"
+
+msgid "Do not allow other nodes to use QUIC to proxy tcp streams to this node (--disable-quic-input parameter)"
+msgstr "不允许其他节点使用 QUIC 把 TCP 流代理到本节点（--disable-quic-input 参数）"
+
+msgid "Maximum bps limit for foreign network relay, unit BPS (--foreign-relay-bps-limit parameter)"
+msgstr "转发外部网络流量的最大速率，单位 BPS（--foreign-relay-bps-limit 参数）"
+
+msgid "Encryption algorithm, default is aes-gcm and is not passed explicitly (--encryption-algorithm parameter)"
+msgstr "加密算法，默认 aes-gcm 且不会显式下发（--encryption-algorithm 参数）"
+
+msgid "Only communicate with peers that already establish p2p connection (--p2p-only parameter)"
+msgstr "只和已建立 P2P 连接的节点通信（--p2p-only 参数）"
+
+msgid "Disable UDP NAT hole punching for symmetric NAT (--disable-sym-hole-punching parameter)"
+msgstr "关闭对称 NAT 的 UDP 打洞（--disable-sym-hole-punching 参数）"
+
+msgid "Disable relay kcp packets (--disable-relay-kcp parameter)"
+msgstr "不转发 KCP 数据包（--disable-relay-kcp 参数）"
+
+msgid "Allow relaying kcp packets from foreign networks (--enable-relay-foreign-network-kcp parameter)"
+msgstr "允许转发外部网络的 KCP 数据包（--enable-relay-foreign-network-kcp 参数）"
+
+msgid "Disable relaying quic packets (--disable-relay-quic parameter)"
+msgstr "不转发 QUIC 数据包（--disable-relay-quic 参数）"
+
+msgid "Allow relaying quic packets from foreign networks (--enable-relay-foreign-network-quic parameter)"
+msgstr "允许转发外部网络的 QUIC 数据包（--enable-relay-foreign-network-quic 参数）"
+
+msgid "UDP port whitelist, supports single ports and ranges (--udp-whitelist parameter)"
+msgstr "UDP 端口白名单，支持单个端口和端口范围（--udp-whitelist 参数）"
+
+msgid "TCP port whitelist, supports single ports and ranges (--tcp-whitelist parameter)"
+msgstr "TCP 端口白名单，支持单个端口和端口范围（--tcp-whitelist 参数）"
+
+msgid "Top level DNS zone used by Magic DNS, default is et.net (--tld-dns-zone parameter)"
+msgstr "Magic DNS 使用的顶级 DNS 区域，默认 et.net（--tld-dns-zone 参数）"
+
+msgid "Maximum inbound bps limit for this network instance, unit BPS (--instance-recv-bps-limit parameter)"
+msgstr "本网络实例入方向的最大速率，单位 BPS（--instance-recv-bps-limit 参数）"
+
+msgid "Set SO_MARK on all underlay sockets, Linux only (--socket-mark parameter)"
+msgstr "给所有底层套接字设置 SO_MARK，仅 Linux 可用（--socket-mark 参数）"
+
+msgid "Turn off automatic UPnP/NAT-PMP port mapping (--disable-upnp parameter)"
+msgstr "关闭自动 UPnP/NAT-PMP 端口映射（--disable-upnp 参数）"
+
+msgid "Only try to establish P2P connections when traffic needs to be forwarded (--lazy-p2p parameter)"
+msgstr "只在有流量需要转发时才尝试建立 P2P 连接（--lazy-p2p 参数）"
+
+msgid "Require a P2P connection before forwarding traffic through relays (--need-p2p parameter)"
+msgstr "必须先建立 P2P 连接才通过中继转发流量（--need-p2p 参数）"
+
+msgid "Custom UDP STUN servers used for NAT type detection and hole punching (--stun-servers parameter)"
+msgstr "用于 NAT 类型探测与打洞的自定义 UDP STUN 服务器（--stun-servers 参数）"
+
+msgid "Custom TCP STUN servers used for NAT type detection and hole punching (--tcp-stun-servers parameter)"
+msgstr "用于 NAT 类型探测与打洞的自定义 TCP STUN 服务器（--tcp-stun-servers 参数）"
+
+msgid "Additional command-line arguments passed to the backend process, split on whitespace"
+msgstr "传给后端进程的额外命令行参数，按空格拆分"
+
+msgid "Runtime log level: Error < Warning < Info < Debug < Trace, 'off' means no --console-log-level"
+msgstr "运行日志级别：Error < Warning < Info < Debug < Trace，'off' 表示不下发 --console-log-level"
+
+msgid "Web configuration server address (-w parameter). Since EasyTier 2.7.0 a full URL is required, e.g. udp://config-server.easytier.cn:22020/username"
+msgstr "Web 配置服务器地址（-w 参数）。自 EasyTier 2.7.0 起需要填完整 URL，例如 udp://config-server.easytier.cn:22020/用户名"
+
+msgid "Default / Configuration File / Web Configuration"
+msgstr "默认 / 配置文件 / Web 配置"
+
+msgid "Start easytier-core on boot"
+msgstr "开机时启动 easytier-core"
+
+msgid "Path of the easytier-core binary"
+msgstr "easytier-core 程序的路径"
+
+msgid "Path of the easytier-web-embed binary"
+msgstr "easytier-web-embed 程序的路径"
+
+msgid "Restart EasyTier when all specified IPs fail to ping"
+msgstr "指定的 IP 全部 ping 不通时重启 EasyTier"
+
+msgid "Remote device IPs used by the connectivity check"
+msgstr "通断检测使用的远端设备 IP"
+
+msgid "Interval time for the connectivity check, in minutes"
+msgstr "通断检测的间隔时间，单位为分钟"
+
+msgid "Version used when the latest release cannot be queried"
+msgstr "查询不到最新版本时使用的版本"
+
+msgid "Download mirrors tried in order, empty means the built-in default list"
+msgstr "按顺序尝试的下载镜像，留空则使用内置默认列表"
+
+msgid "Traffic permission rules between network zones: etfwlan, etfwwan, lanfwet, wanfwet"
+msgstr "网络区域之间的流量放行规则：etfwlan、etfwwan、lanfwet、wanfwet"
+
+msgid "SQLite database path (-d parameter)"
+msgstr "SQLite 数据库路径（-d 参数）"
+
+msgid "Listening protocol of the web console (-p parameter)"
+msgstr "Web 控制台的监听协议（-p 参数）"
+
+msgid "Service port of the web console (-c parameter)"
+msgstr "Web 控制台的服务端口（-c 参数）"
+
+msgid "API listen port (-a parameter)"
+msgstr "API 监听端口（-a 参数）"
+
+msgid "Default API server URL returned to clients (--api-host parameter)"
+msgstr "返回给客户端的默认 API 服务器 URL（--api-host 参数）"
+
+msgid "GeoIP database path (--geoip-db parameter)"
+msgstr "GeoIP 数据库路径（--geoip-db 参数）"
+
+msgid "Web interface port, empty disables the built-in web UI (--no-web / -l parameter)"
+msgstr "Web 界面端口，留空则关闭内置 Web 界面（--no-web / -l 参数）"
+
+msgid "API listen address, 0.0.0.0 means all interfaces and is not passed explicitly (--api-server-addr parameter)"
+msgstr "API 监听地址，0.0.0.0 表示所有网卡且不会显式下发（--api-server-addr 参数）"
+
+msgid "Web listen address, 0.0.0.0 means all interfaces and is not passed explicitly (--web-server-addr parameter)"
+msgstr "Web 监听地址，0.0.0.0 表示所有网卡且不会显式下发（--web-server-addr 参数）"
+
+msgid "Disable user registration (--disable-registration parameter)"
+msgstr "禁止用户注册（--disable-registration 参数）"
+
+msgid "Allow auto create user when connecting (--allow-auto-create-user parameter)"
+msgstr "允许节点连接时自动创建用户（--allow-auto-create-user 参数）"
+
+msgid "Minimum heartbeat response time in milliseconds (--heartbeat-min-response-ms parameter)"
+msgstr "心跳最小响应时间，单位毫秒（--heartbeat-min-response-ms 参数）"
+
+msgid "Heartbeat timeout in milliseconds (--heartbeat-timeout-ms parameter)"
+msgstr "心跳超时时间，单位毫秒（--heartbeat-timeout-ms 参数）"
+
+msgid "Peer URL announced by the gateway (--gateway-peer-url parameter)"
+msgstr "网关对外发布的对等节点地址（--gateway-peer-url 参数）"
+
+msgid "Relay data through the gateway (--gateway-relay-data true parameter)"
+msgstr "通过网关转发数据（--gateway-relay-data true 参数）"
+
+msgid "Enable OIDC single sign-on for the web console"
+msgstr "为 Web 控制台启用 OIDC 单点登录"
+
+msgid "OIDC issuer URL (--oidc-issuer-url parameter, requires OIDC enabled)"
+msgstr "OIDC 颁发者 URL（--oidc-issuer-url 参数，需先启用 OIDC）"
+
+msgid "OIDC client id (--oidc-client-id parameter, requires OIDC enabled)"
+msgstr "OIDC 客户端 ID（--oidc-client-id 参数，需先启用 OIDC）"
+
+msgid "OIDC client secret (--oidc-client-secret parameter, requires OIDC enabled)"
+msgstr "OIDC 客户端密钥（--oidc-client-secret 参数，需先启用 OIDC）"
+
+msgid "OIDC redirect URL (--oidc-redirect-url parameter, requires OIDC enabled)"
+msgstr "OIDC 回调 URL（--oidc-redirect-url 参数，需先启用 OIDC）"
+
+msgid "OIDC username claim (--oidc-username-claim parameter, requires OIDC enabled)"
+msgstr "OIDC 用户名声明（--oidc-username-claim 参数，需先启用 OIDC）"
+
+msgid "OIDC scopes, passed as a single argument (--oidc-scopes parameter, requires OIDC enabled)"
+msgstr "OIDC 作用域，作为单个参数传入（--oidc-scopes 参数，需先启用 OIDC）"
+
+msgid "OIDC frontend base URL (--oidc-frontend-base-url parameter, requires OIDC enabled)"
+msgstr "OIDC 前端基础 URL（--oidc-frontend-base-url 参数，需先启用 OIDC）"
+
+msgid "Disable PKCE for OIDC (--oidc-disable-pkce parameter, requires OIDC enabled)"
+msgstr "关闭 OIDC 的 PKCE（--oidc-disable-pkce 参数，需先启用 OIDC）"
+
+msgid "Enable webhook integration for the web console"
+msgstr "为 Web 控制台启用 Webhook 集成"
+
+msgid "Webhook URL (--webhook-url parameter, requires webhook enabled)"
+msgstr "Webhook 地址（--webhook-url 参数，需先启用 Webhook）"
+
+msgid "Webhook secret (--webhook-secret parameter, requires webhook enabled)"
+msgstr "Webhook 密钥（--webhook-secret 参数，需先启用 Webhook）"
+
+msgid "Internal auth token (--internal-auth-token parameter, requires webhook enabled)"
+msgstr "内部认证令牌（--internal-auth-token 参数，需先启用 Webhook）"
+
+msgid "Web instance id (--web-instance-id parameter, requires webhook enabled)"
+msgstr "Web 实例 ID（--web-instance-id 参数，需先启用 Webhook）"
+
+msgid "Web instance API base URL (--web-instance-api-base-url parameter, requires webhook enabled)"
+msgstr "Web 实例 API 基础 URL（--web-instance-api-base-url 参数，需先启用 Webhook）"
+
+msgid "Log level of easytier-web, 'off' means no --console-log-level"
+msgstr "easytier-web 的日志级别，'off' 表示不下发 --console-log-level"
+
+msgid "Open the web service port to WAN"
+msgstr "在 WAN 上放行 Web 服务端口"
+
+msgid "Open the API port to WAN"
+msgstr "在 WAN 上放行 API 端口"
+
+msgid "Start easytier-web-embed on boot"
+msgstr "开机时启动 easytier-web-embed"
+
+msgid "- Program /tmp/easytier-cli uploaded successfully, restart the plugin to take effect"
+msgstr "- 程序 /tmp/easytier-cli 上传成功，重启插件后生效"
+
+msgid "- Program /tmp/easytier-core uploaded successfully, restart the plugin to take effect"
+msgstr "- 程序 /tmp/easytier-core 上传成功，重启插件后生效"
+
+msgid "- Program /tmp/easytier-web uploaded successfully, restart the plugin to take effect"
+msgstr "- 程序 /tmp/easytier-web 上传成功，重启插件后生效"
+
+msgid "A simple, secure, decentralized VPN solution for intranet penetration, implemented in Rust using the Tokio framework. Project URL: <a href=\"https://github.com/EasyTier/EasyTier\" target=\"_blank\">github.com/EasyTier/EasyTier</a>&nbsp;&nbsp;<a href=\"http://easytier.cn\" target=\"_blank\">Official Documentation</a>&nbsp;&nbsp;<a href=\"http://qm.qq.com/cgi-bin/qm/qr?_wv=1027&k=jhP2Z4UsEZ8wvfGPLrs0VwLKn_uz0Q_p&authKey=OGKSQLfg61YPCpVQuvx%2BxE7hUKBVBEVi9PljrDKbHlle6xqOXx8sOwPPTncMambK&noverify=0&group_code=949700262\" target=\"_blank\">QQ Group</a>&nbsp;&nbsp;<a href=\"https://doc.oee.icu\" target=\"_blank\">Beginner Tutorial</a>"
+msgstr "一个简单、安全、去中心化的内网穿透 VPN 组网方案，使用 Rust 语言和 Tokio 框架实现。 项目地址：<a href=\"https://github.com/EasyTier/EasyTier\" target=\"_blank\">github.com/EasyTier/EasyTier</a>&nbsp;&nbsp;<a href=\"http://easytier.cn\" target=\"_blank\">官网文档</a>&nbsp;&nbsp;<a href=\"http://qm.qq.com/cgi-bin/qm/qr?_wv=1027&k=jhP2Z4UsEZ8wvfGPLrs0VwLKn_uz0Q_p&authKey=OGKSQLfg61YPCpVQuvx%2BxE7hUKBVBEVi9PljrDKbHlle6xqOXx8sOwPPTncMambK&noverify=0&group_code=949700262\" target=\"_blank\">QQ群</a>&nbsp;&nbsp;"
+
+msgid "Click the button to refresh and view ACL rules information"
+msgstr "点击按钮刷新并查看 ACL 规则信息"
+
+msgid "Click the button to refresh and view STUN information"
+msgstr "点击按钮刷新并查看 STUN 信息"
+
+msgid "Click the button to refresh and view TCP/KCP proxy information"
+msgstr "点击按钮刷新并查看 TCP/KCP 代理信息"
+
+msgid "Click the button to refresh and view connector information"
+msgstr "点击按钮刷新并查看连接信息"
+
+msgid "Click the button to refresh and view local node information"
+msgstr "点击按钮刷新并查看本节点信息"
+
+msgid "Click the button to refresh and view manage mapped listeners"
+msgstr "点击按钮刷新并管理映射监听"
+
+msgid "Click the button to refresh and view peer information"
+msgstr "点击按钮刷新并查看对等节点信息"
+
+msgid "Click the button to refresh and view peer-center information"
+msgstr "点击按钮刷新并查看 peer-center 信息"
+
+msgid "Click the button to refresh and view route information"
+msgstr "点击按钮刷新并查看路由信息"
+
+msgid "Click the button to refresh and view statistics information"
+msgstr "点击按钮刷新并查看统计信息"
+
+msgid "Click the button to refresh and view the complete local startup parameters"
+msgstr "点击按钮刷新并查看完整的本地启动参数"
+
+msgid "Click the button to refresh and view vpn-portal information"
+msgstr "点击按钮刷新并查看 vpn-portal 信息"
+
+msgid "Click the button to start checking for updates and refresh the version display in the status bar above"
+msgstr "点击按钮开始检查更新，并刷新上方状态栏里的版本显示"
+
+msgid "EasyTier"
+msgstr "EasyTier"
+
+msgid "Fallback version to use when unable to fetch the latest version from GitHub."
+msgstr "无法从 GitHub 获取最新版本时使用的备用版本。"
+
+msgid "Mapped listener"
+msgstr "映射监听"
+
+msgid "No proxy configured"
+msgstr "未配置加速镜像"
+
+msgid "Peer Info"
+msgstr "对等节点信息"
+
+msgid "Peer-Center Info"
+msgstr "Peer-Center 信息"
+
+msgid "Proxy added successfully"
+msgstr "代理添加成功"
+
+msgid "Quickly restart once without modifying any parameters"
+msgstr "不修改任何参数快速重启一次"
+
+msgid "Space-separated list of GitHub proxy URLs for downloading binaries. Leave empty to use default proxies."
+msgstr "用于下载程序的 GitHub 加速镜像地址，多个之间用空格分隔；留空则使用默认镜像。"
+
+msgid "Stats"
+msgstr "统计"
+

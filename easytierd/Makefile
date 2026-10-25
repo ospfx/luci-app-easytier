@@ -20,7 +20,7 @@ define Package/easytierd
 	CATEGORY:=Network
 	TITLE:=EasyTier service daemon (C rewrite of luci-app-easytier backend)
 	URL:=https://github.com/EasyTier/luci-app-easytier
-	DEPENDS:=+libubox +libubus +libuci +libblobmsg-json +libjson-c
+	DEPENDS:=+libuci +libjson-c
 endef
 
 define Package/easytierd/description
@@ -39,7 +39,7 @@ define Build/Compile
 		CFLAGS="$(TARGET_CFLAGS) $(TARGET_CPPFLAGS) -std=gnu11 -D_GNU_SOURCE -Iinclude -Wall -Wextra -Werror" \
 		LDFLAGS="$(TARGET_LDFLAGS)" \
 		STAGING="$(STAGING_DIR)/usr" \
-		LIBS="-lubus -lubox -lblobmsg_json -luci -ljson-c" \
+		LIBS="-luci -ljson-c" \
 		link
 endef
 
