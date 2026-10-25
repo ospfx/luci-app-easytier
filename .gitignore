@@ -1,0 +1,4 @@
+.cloud/
+.toolchain/
+src/build/
+*.o
