@@ -6,11 +6,16 @@
 set -eu
 
 TC=/workspace/.toolchain
-SDK="$TC/sdk"
+# 多架构：ET_SDK_DIR / ET_SDK_ARCH / ET_SDK_TARGET 三个环境变量可切换，默认 x86/64
+#   x86/64        : ET_SDK_DIR=sdk        ET_SDK_ARCH=x86-64       ET_SDK_TARGET=x86/64
+#   armsr/armv8   : ET_SDK_DIR=sdk-armv8  ET_SDK_ARCH=armsr-armv8  ET_SDK_TARGET=armsr/armv8
+#   ramips/mt7621 : ET_SDK_DIR=sdk-mt7621 ET_SDK_ARCH=ramips-mt7621 ET_SDK_TARGET=ramips/mt7621
+SDK="$TC/${ET_SDK_DIR:-sdk}"
 HOST="$TC/host"
 SRC="$TC/src"
 SDK_VER=24.10.0
-SDK_ARCH=x86-64
+SDK_ARCH="${ET_SDK_ARCH:-x86-64}"
+SDK_TARGET="${ET_SDK_TARGET:-x86/64}"
 # 实测文件名：openwrt-sdk-24.10.0-x86-64_gcc-13.3.0_musl.Linux-x86_64.tar.zst
 # 注意：文件名中段含多个 '.'，正则必须用 [^"<>]* 吞掉，否则 .tar.zst 里的 tar 会变成字面量匹配失败
 SDK_GLOB="openwrt-sdk-${SDK_VER}-${SDK_ARCH}_"'[^"<>]*\.tar\.zst'
@@ -56,13 +61,15 @@ fi
 # ---------- 2. OpenWrt SDK ----------
 sdk_gcc() { ls "$SDK"/staging_dir/toolchain-*/bin/*-openwrt-linux-musl-gcc 2>/dev/null | head -1; }
 
-if [ -n "$(sdk_gcc)" ] && [ -d "$SDK/staging_dir/target-x86_64_musl" ]; then
+sdk_target_dir() { ls -d "$SDK"/staging_dir/target-* 2>/dev/null | head -1; }
+
+if [ -n "$(sdk_gcc)" ] && [ -n "$(sdk_target_dir)" ]; then
     log "SDK 已存在: $SDK"
 else
     log "下载 OpenWrt $SDK_VER SDK ($SDK_ARCH)..."
     FILE=""
     for M in $MIRRORS; do
-        BASE="$M/releases/$SDK_VER/targets/x86/64"
+        BASE="$M/releases/$SDK_VER/targets/$SDK_TARGET"
         CAND="$(curl -fsSL -m 30 "$BASE/" 2>/dev/null | grep -oE "$SDK_GLOB" | head -1 || true)"
         if [ -n "$CAND" ]; then
             FILE="$CAND"; SRCBASE="$BASE"; log "镜像可用: $M -> $FILE"; break
@@ -78,7 +85,7 @@ else
         rm -f "$PKG"
         ok=0
         for M in $MIRRORS; do
-            URL="$M/releases/$SDK_VER/targets/x86/64/$FILE"
+            URL="$M/releases/$SDK_VER/targets/$SDK_TARGET/$FILE"
             log "  下载 $URL"
             if curl -fL -m 1800 --retry 3 --retry-delay 2 -C - -o "$PKG" "$URL"; then
                 if [ -z "$want_sha" ] || [ "$(sha256sum "$PKG" | awk '{print $1}')" = "$want_sha" ]; then

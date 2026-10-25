@@ -82,7 +82,7 @@ Key design points:
 
 | Package | Contents | Role | Depends |
 | --- | --- | --- | --- |
-| `easytierd` | `/usr/sbin/easytierd`, `/usr/sbin/easytierctl` | **C backend**: supervision, config model, firewall/interface orchestration, status, logs, upload/download/install, i18n dictionary | `libubox` `libubus` `libuci` `libblobmsg-json` `libjson-c` |
+| `easytierd` | `/usr/sbin/easytierd`, `/usr/sbin/easytierctl` | **C backend**: supervision, config model, firewall/interface orchestration, status, logs, upload/download/install, i18n dictionary | `libuci` `libjson-c` |
 | `luci-app-easytier` | `luasrc/controller/easytier.lua`, 6 HTM templates, `/etc/init.d/easytier` (24 lines), UCI defaults, rpcd ACL, i18n JSON | **UI and bridge**: menu, templates, forward requests to `easytierctl` | `+kmod-tun` `+luci-compat` **`+easytierd`** |
 
 `luci-app-easytier` hard-depends on `easytierd`: without it the pages load but every endpoint fails. The package

@@ -75,7 +75,7 @@ flowchart LR
 
 | 包 | 内容 | 作用 | 依赖 |
 | --- | --- | --- | --- |
-| `easytierd` | `/usr/sbin/easytierd`、`/usr/sbin/easytierctl` | **C 后端**：进程守护、配置模型、防火墙/接口编排、状态采集、日志、上传下载安装、i18n 字典加载 | `libubox` `libubus` `libuci` `libblobmsg-json` `libjson-c` |
+| `easytierd` | `/usr/sbin/easytierd`、`/usr/sbin/easytierctl` | **C 后端**：进程守护、配置模型、防火墙/接口编排、状态采集、日志、上传下载安装、i18n 字典加载 | `libuci` `libjson-c` |
 | `luci-app-easytier` | `luasrc/controller/easytier.lua`、6 个 HTM 模板、`/etc/init.d/easytier`（24 行）、UCI 默认配置、rpcd ACL、i18n JSON | **UI 与桥接层**：菜单、页面模板、把请求转发给 `easytierctl` | `+kmod-tun` `+luci-compat` **`+easytierd`** |
 
 `luci-app-easytier` 强依赖 `easytierd`：少了它界面能打开但所有接口都会失败。包管理器会解析这个依赖，

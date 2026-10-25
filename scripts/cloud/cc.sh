@@ -44,7 +44,7 @@ SSH_OPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile="$CLOUD/known_hosts"
 
 TC=/workspace/.toolchain
 CROSS_CC="$TC/sdk/staging_dir/toolchain-x86_64_gcc-13.3.0_musl/bin/x86_64-openwrt-linux-musl-gcc"
-CROSS_ROOT="$TC/sdk/staging_dir/target-x86_64_musl"
+CROSS_ROOT="$TC/${ET_SDK_DIR:-sdk}/staging_dir/target-x86_64_musl"
 HOST="$TC/host"
 TARGET="$([ $DO_LINK -eq 1 ] && echo link || echo objs)"
 

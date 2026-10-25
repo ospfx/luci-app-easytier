@@ -6,11 +6,18 @@
 #   scripts/cloud/build.sh --luci       # 连带 luci-app-easytier 包（需要 feeds/luci）
 #   scripts/cloud/build.sh --clean      # 先 clean
 #
+# 多架构（默认 x86/64）：
+#   ET_SDK_DIR=sdk-armv8 ET_SDK_ARCH=armsr-armv8 ET_SDK_TARGET=armsr/armv8 \
+#     scripts/cloud/build.sh
+#
 # 说明：远端脚本通过 stdin 灌给 bash -s 执行，避免多层引号把脚本内容吃掉。
 set -u
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 CLOUD="$ROOT/.cloud"
+SDK_DIR="${ET_SDK_DIR:-sdk}"
+SDK_ARCH="${ET_SDK_ARCH:-x86-64}"
+SDK_TARGET="${ET_SDK_TARGET:-x86/64}"
 WITH_LUCI=0
 DO_CLEAN=0
 for a in "$@"; do
@@ -29,14 +36,24 @@ SSH_OPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile="$CLOUD/known_hosts"
           -o ConnectTimeout=20 -o ServerAliveInterval=30 -o BatchMode=yes)
 [ -f "$KEY" ] && SSH_OPTS+=(-i "$KEY")
 
-REMOTE_REPO="/workspace/.build/pkg/src"
+REMOTE_SDK="/workspace/.toolchain/$SDK_DIR"
+REMOTE_REPO="/workspace/.build/pkg-$SDK_DIR/src"
+export SDK_DIR SDK_ARCH SDK_TARGET
 
+echo "[build] 目标 SDK: $SDK_DIR ($SDK_ARCH / $SDK_TARGET)"
 echo "[build] 预检云环境工具链..."
 # 容器被平台回收后 /workspace 会保留但 apt 安装的依赖会丢失，两项都要检查
-if ! ssh "${SSH_OPTS[@]}" "$ET_SSH" \
-      "test -x /workspace/.toolchain/sdk/scripts/feeds && test -f /usr/include/ncurses.h && command -v gawk >/dev/null" 2>/dev/null; then
+if ! ssh "${SSH_OPTS[@]}" "$ET_SSH" "bash -s" 2>/dev/null <<CHK
+test -x "$REMOTE_SDK/scripts/feeds" && test -f /usr/include/ncurses.h && command -v gawk >/dev/null
+CHK
+then
     echo "[build] 底座缺失，自动执行 setup.sh ..."
-    bash "$ROOT/scripts/cloud/ssh.sh" -s < "$ROOT/scripts/cloud/setup.sh" 2>&1 | tail -5
+    # 远端拿不到本地环境变量，先把三个开关 export 进脚本头部再灌过去
+    { echo "export ET_SDK_DIR=$SDK_DIR"
+      echo "export ET_SDK_ARCH=$SDK_ARCH"
+      echo "export ET_SDK_TARGET=$SDK_TARGET"
+      cat "$ROOT/scripts/cloud/setup.sh"; } \
+      | bash "$ROOT/scripts/cloud/ssh.sh" -s 2>&1 | tail -5
 fi
 
 echo "[build] 同步工作树 -> $REMOTE_REPO"
@@ -58,7 +75,7 @@ ROUT="$CLOUD/remote_build.log"
 {
 cat <<'EOS'
 set -e
-SDK=/workspace/.toolchain/sdk
+SDK=__SDK__
 REPO=__REPO__
 cd "$SDK"
 
@@ -132,6 +149,7 @@ echo "[remote] 产物："
 find bin -name 'easytierd*.ipk' -o -name 'luci-app-easytier*.ipk' 2>/dev/null | head
 EOS
 } | sed -e "s|__REPO__|$REMOTE_REPO|" \
+      -e "s|__SDK__|$REMOTE_SDK|" \
       -e "s|__WITH_LUCI__|$WITH_LUCI|" \
       -e "s|__DO_CLEAN__|$DO_CLEAN|" > "$RSH"
 wc -l < "$RSH" | xargs echo "[build] 远端脚本行数:"

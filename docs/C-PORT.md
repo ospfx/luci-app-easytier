@@ -264,7 +264,9 @@ if (!v || !*v) {
 1. **ubus 对象**。`src/include/etd_api.h` 的注释把 `ubus call easytier <method>` 列为调用路径之一，
    但 `src/` 里没有任何 `ubus_*` / `uloop_*` 调用（`grep -rn ubus src/` 只命中注释与 Makefile 的 `LIBS`）。
    当前所有调用都走 `easytierctl exec`。
-   影响：`easytierd` 的包依赖里声明的 `libubox/libubus/libblobmsg-json` 实际未被使用，属于"为将来预留"。
+   **已收敛**：`easytierd` 的 `DEPENDS` 与 `src/Makefile` 的 `LIBS` 已去掉这三个库，
+   只保留实际使用的 `libuci` + `libjson-c`（`grep -rn ubus_ src/` 无任何调用）。
+   若将来真要上 ubus，把 `-lubus -lubox -lblobmsg_json` 加回 `LIBS` 并在 `DEPENDS` 里补上即可。
 2. **没有独立的集成测试脚本**。`setup.sh` 末尾带一段 ubusd/uci 冒烟（编译一个 ubus 客户端、注册对象、
    `ubus list` 验证、`uci get` 验证），但没有"假 easytier-core"的端到端用例：
    目前无法在云端自动验证"启动 → 写 firewall UCI → 延迟 reload → 停止清理"这条链路。

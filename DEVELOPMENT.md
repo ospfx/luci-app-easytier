@@ -166,7 +166,49 @@ scripts/cloud/cc.sh --cross --link  # 交叉编译并链接（需 staging 已有
 # 4) 权威构建：走 OpenWrt 包系统出 ipk（会自己构建依赖）
 scripts/cloud/build.sh              # 只编 easytierd
 scripts/cloud/build.sh --luci       # 连带 luci-app-easytier（需要 feeds/luci）
+scripts/cloud/build.sh --clean      # 先 make package/easytierd/clean
 ```
+
+产物在云环境的 `bin/packages/<arch>/base/`，例如 x86/64 下：
+
+```
+easytierd_1.0.0-r1_x86_64.ipk
+luci-app-easytier_2.7.0-r1_all.ipk
+luci-i18n-easytier-zh-cn_2.7.0_all.ipk
+```
+
+> **SDK 的 `staging_dir/target-*` 是空的**，所有依赖必须从 feeds 现编。`build.sh` 会在远端自动完成：
+> 写 `feeds.conf`（packages / base / luci，base 指向 `openwrt.git;openwrt-24.10`）→
+> `feeds update` → `feeds install libuci libjson-c`。注意 `feeds install` 落在
+> `package/feeds/<feed>/<源目录名>`，**`libuci` 的源目录叫 `uci`**，别按包名去找。
+> 冷启动（含 feeds 克隆 + 依赖编译）约 4 分钟，之后增量约 1 分钟。
+
+取回产物：
+
+```bash
+bash -c '. .cloud/ssh.env; ssh -o UserKnownHostsFile=.cloud/known_hosts "$ET_SSH" \
+  "cat /workspace/.toolchain/sdk/bin/packages/x86_64/base/easytierd_1.0.0-r1_x86_64.ipk" \
+  > dist/easytierd.ipk'
+```
+
+#### 多架构
+
+`setup.sh` / `build.sh` / `cc.sh` 共用三个环境变量，默认就是 x86/64：
+
+| 架构 | `ET_SDK_DIR` | `ET_SDK_ARCH` | `ET_SDK_TARGET` |
+| --- | --- | --- | --- |
+| x86/64（默认） | `sdk` | `x86-64` | `x86/64` |
+| armsr/armv8（aarch64） | `sdk-armv8` | `armsr-armv8` | `armsr/armv8` |
+| ramips/mt7621（mipsel） | `sdk-mt7621` | `ramips-mt7621` | `ramips/mt7621` |
+
+```bash
+ET_SDK_DIR=sdk-armv8 ET_SDK_ARCH=armsr-armv8 ET_SDK_TARGET=armsr/armv8 \
+  scripts/cloud/build.sh
+```
+
+每个架构一个独立的 SDK 目录（`/workspace/.toolchain/sdk-<arch>`）与源码同步目录
+（`/workspace/.build/pkg-<dir>/src`），互不覆盖。远端拿不到本地环境变量，所以
+`build.sh` 会把这三个开关 `export` 到 `setup.sh` 脚本头部再灌过去。
 
 `setup.sh` 与 `build.sh` 也可以远程执行：`scripts/cloud/ssh.sh -s < scripts/cloud/setup.sh`。
 多任务并行时用 `ET_BUILD_ID=xxx` 给每个任务独立的远程构建目录，避免互相清空：
@@ -187,7 +229,7 @@ ET_BUILD_ID=feat-argv scripts/cloud/cc.sh --link
 | `start.sh` | 调 CNB API 拉起 workspace，轮询 60×5s 拿到 `remoteSsh` 写入 `.cloud/ssh.env` |
 | `ssh.sh` | 命令失败且 rc=255（连接层）时自动重新 `start.sh` 再重试；`-s` 模式会先把 stdin 落盘再重放 |
 | `cc.sh` | 先探测 `gcc`/`make`，缺失时自动跑 `setup.sh`；同步失败时提示环境已回收 |
-| `build.sh` | 先探测 `sdk/scripts/feeds`，缺失时自动跑 `setup.sh` |
+| `build.sh` | 先探测 `sdk/scripts/feeds` + `ncurses.h` + `gawk`，任一缺失就自动跑 `setup.sh`；远端再自动 `feeds update/install` |
 | `keepalive.sh` | 每 `ET_KEEPALIVE_INTERVAL`（默认 120s）调一次 `keepalive_once.sh` |
 | `keepalive_once.sh` | 维持常驻 SSH 主连接（`ssh -M -N -f` + ControlPath），心跳失败就重新拉起环境；再检查 `/workspace/.toolchain/host/sbin/ubusd` 与 `gcc`，缺失就重跑 `setup.sh` |
 
