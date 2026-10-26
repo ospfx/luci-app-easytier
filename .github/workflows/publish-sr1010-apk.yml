@@ -21,16 +21,24 @@ jobs:
           run-id: 40345471035
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path: dist
-      - name: List files
-        run: ls -l dist
+      - name: Select only EasyTier packages
+        run: |
+          mkdir -p release
+          for f in dist/*.apk; do
+            b=$(basename "$f")
+            case "$b" in
+              easytier-*|easytierd-*|luci-app-easytier-*|luci-i18n-easytier-*) cp "$f" release/ ;;
+            esac
+          done
+          ls -l release
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: sr1010-immortalwrt-25.12.1
-          name: SR1010 ImmortalWrt 25.12.1 APK
+          tag_name: sr1010-immortalwrt-25.12.1-clean
+          name: SR1010 ImmortalWrt 25.12.1 APK (EasyTier only)
           body: |
             SR1010 (aarch64_cortex-a53) ImmortalWrt 25.12.1 专用 APK 包。
-            仅包含 EasyTier 相关包，不含其他架构。
-          files: dist/*
+            仅包含 EasyTier 相关包：easytier、easytier-noweb、easytierd、luci-app-easytier、luci-i18n-easytier-zh-cn。
+          files: release/*
           prerelease: false
           token: ${{ secrets.GITHUB_TOKEN }}

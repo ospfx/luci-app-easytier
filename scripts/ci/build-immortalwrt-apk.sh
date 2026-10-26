@@ -116,9 +116,12 @@ make -j"$(nproc)" package/luci-app-easytier/compile V=s
 log "编译官方核心包 easytier / easytier-noweb"
 make -j"$(nproc)" package/easytier/compile package/easytier-noweb/compile V=s || log "核心包编译失败（可忽略，继续收集已有包）"
 
-log "收集 APK"
+log "收集 APK（只保留 EasyTier 相关包）"
 find bin/packages -type f -name '*.apk' | sort | while read -r f; do
-  cp -v "$f" "$OUT/"
+  b="$(basename "$f")"
+  case "$b" in
+    easytier-*|easytierd-*|luci-app-easytier-*|luci-i18n-easytier-*) cp -v "$f" "$OUT/" ;;
+  esac
 done
 log "产物:"
 ls -l "$OUT"
