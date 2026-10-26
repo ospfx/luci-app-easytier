@@ -12,15 +12,33 @@ on:
       - 'scripts/ci/**'
       - '.github/workflows/sr1010-immortalwrt-apk.yml'
 
+permissions:
+  contents: write
+
 jobs:
   build-apk:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Build ImmortalWrt 25.12.1 APK (aarch64_cortex-a53)
-        run: bash scripts/ci/build-immortalwrt-apk.sh
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p out
+          bash scripts/ci/build-immortalwrt-apk.sh 2>&1 | tee out/build.log
       - name: Upload APK artifacts
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: sr1010-immortalwrt-25.12.1-aarch64_cortex-a53-apk
           path: out/*.apk
+      - name: Publish build log to release
+        if: always()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ci-log-${{ github.run_id }}
+          name: CI log ${{ github.run_id }}
+          body: ${{ github.sha }}
+          files: out/build.log
+          prerelease: true
+          token: ${{ secrets.GITHUB_TOKEN }}
