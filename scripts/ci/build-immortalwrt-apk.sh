@@ -30,6 +30,14 @@ done
 if [ -n "$need" ]; then
   log "安装依赖:$need"
   export DEBIAN_FRONTEND=noninteractive
+  export TZ=UTC
+  # CNB 容器把 /etc/localtime 做成了 bind mount，tzdata 的 postinst 会 mv 失败；
+  # 临时用空脚本跳过它，避免整个 apt 事务回滚。
+  if [ -f /var/lib/dpkg/info/tzdata.postinst ]; then
+    cp -f /var/lib/dpkg/info/tzdata.postinst /tmp/tzdata.postinst.bak || true
+    printf '#!/bin/sh\nexit 0\n' > /var/lib/dpkg/info/tzdata.postinst
+    chmod +x /var/lib/dpkg/info/tzdata.postinst
+  fi
   apt-get update
   dpkg --configure -a || true
   apt-get install -y --no-install-recommends \
