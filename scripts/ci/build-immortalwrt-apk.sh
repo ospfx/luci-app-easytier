@@ -31,30 +31,31 @@ if [ -n "$need" ]; then
   log "安装依赖:$need"
   export DEBIAN_FRONTEND=noninteractive
   export TZ=UTC
-  # CNB 容器把 /etc/localtime 做成了 bind mount，tzdata 的 postinst 会 mv 失败；
-  # 临时用空脚本跳过它，避免整个 apt 事务回滚。
-  apt-get update
-  # CNB 容器 /etc/localtime 是 bind mount，tzdata postinst 的 mv 会失败；
-  # 先下载 deb、替换 postinst 为直接成功，再安装，避免 apt 事务回滚。
-  mkdir -p /tmp/tzfix && cd /tmp/tzfix
-  apt-get download tzdata || true
-  if ls tzdata_*.deb >/dev/null 2>&1; then
-    rm -rf tzdata
-    dpkg-deb -R tzdata_*.deb tzdata
-    printf '#!/bin/sh\nexit 0\n' > tzdata/DEBIAN/postinst
-    chmod 755 tzdata/DEBIAN/postinst
-    dpkg-deb -b tzdata tzdata-fixed.deb
-    dpkg -i tzdata-fixed.deb || true
+  SUDO=""
+  [ "$(id -u)" -eq 0 ] || SUDO="sudo"
+  $SUDO apt-get update
+  # CNB 精简镜像没有 tzdata；/etc/localtime 是 bind mount，postinst 的 mv 会失败。
+  # 先下载 deb、替换 postinst 为 exit 0，再安装；GitHub runner 已有 tzdata 则跳过。
+  if ! dpkg -s tzdata 2>/dev/null | grep -q '^Status: install ok installed'; then
+    rm -rf /tmp/tzfix; mkdir -p /tmp/tzfix; cd /tmp/tzfix
+    $SUDO apt-get download tzdata || true
+    if ls tzdata_*.deb >/dev/null 2>&1; then
+      dpkg-deb -R tzdata_*.deb tzdata
+      printf '#!/bin/sh\nexit 0\n' > tzdata/DEBIAN/postinst
+      chmod 755 tzdata/DEBIAN/postinst
+      dpkg-deb -b tzdata tzdata-fixed.deb
+      $SUDO dpkg -i tzdata-fixed.deb || true
+    fi
+    $SUDO apt-mark hold tzdata || true
+    cd "$ROOT"
+    $SUDO dpkg --configure -a || true
   fi
-  apt-mark hold tzdata || true
-  cd "$ROOT"
-  dpkg --configure -a || true
-  apt-get install -y --no-install-recommends \
+  $SUDO apt-get install -y --no-install-recommends \
     build-essential cmake pkg-config git curl wget ca-certificates \
     zstd xz-utils unzip zip rsync file gawk \
     libncurses-dev libjson-c-dev libssl-dev zlib1g-dev python3 || {
-      echo "apt install failed, retrying with -f"; apt-get -f install -y || true; dpkg --configure -a || true;
-      apt-get install -y --no-install-recommends build-essential cmake pkg-config git curl wget ca-certificates zstd xz-utils unzip zip rsync file gawk libncurses-dev libjson-c-dev libssl-dev zlib1g-dev python3;
+      echo "apt install failed, retrying with -f"; $SUDO apt-get -f install -y || true; $SUDO dpkg --configure -a || true;
+      $SUDO apt-get install -y --no-install-recommends build-essential cmake pkg-config git curl wget ca-certificates zstd xz-utils unzip zip rsync file gawk libncurses-dev libjson-c-dev libssl-dev zlib1g-dev python3;
     }
 fi
 
