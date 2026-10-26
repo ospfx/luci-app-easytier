@@ -1,0 +1,13 @@
+main:
+  push:
+    - name: sr1010-immortalwrt-apk
+      runner:
+        cpus: 8
+      docker:
+        image: ubuntu:24.04
+      stages:
+        - name: build-apk
+          script: |
+            set -e
+            bash scripts/ci/build-immortalwrt-apk.sh
+          timeout: 2h

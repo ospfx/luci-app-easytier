@@ -1,0 +1,26 @@
+name: Build SR1010 ImmortalWrt APK
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'easytierd/**'
+      - 'src/**'
+      - 'luci-app-easytier/**'
+      - 'easytier/**'
+      - 'easytier-noweb/**'
+      - 'scripts/ci/**'
+      - '.github/workflows/sr1010-immortalwrt-apk.yml'
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build ImmortalWrt 25.12.1 APK (aarch64_cortex-a53)
+        run: bash scripts/ci/build-immortalwrt-apk.sh
+      - name: Upload APK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sr1010-immortalwrt-25.12.1-aarch64_cortex-a53-apk
+          path: out/*.apk
