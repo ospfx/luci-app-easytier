@@ -30,11 +30,15 @@ done
 if [ -n "$need" ]; then
   log "安装依赖:$need"
   export DEBIAN_FRONTEND=noninteractive
-  apt-get update -qq
-  apt-get install -y -qq --no-install-recommends \
+  apt-get update
+  dpkg --configure -a || true
+  apt-get install -y --no-install-recommends \
     build-essential cmake pkg-config git curl wget ca-certificates \
     zstd xz-utils unzip zip rsync file gawk \
-    libncurses-dev libjson-c-dev libssl-dev zlib1g-dev python3 2>&1 | tail -3
+    libncurses-dev libjson-c-dev libssl-dev zlib1g-dev python3 || {
+      echo "apt install failed, retrying with -f"; apt-get -f install -y || true; dpkg --configure -a || true;
+      apt-get install -y --no-install-recommends build-essential cmake pkg-config git curl wget ca-certificates zstd xz-utils unzip zip rsync file gawk libncurses-dev libjson-c-dev libssl-dev zlib1g-dev python3;
+    }
 fi
 
 # ---------- SDK ----------
