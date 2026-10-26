@@ -33,6 +33,18 @@ jobs:
         with:
           name: sr1010-immortalwrt-25.12.1-aarch64_cortex-a53-apk
           path: out/*.apk
+      - name: Publish APK release
+        if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: sr1010-immortalwrt-25.12.1
+          name: SR1010 ImmortalWrt 25.12.1 APK
+          body: |
+            SR1010 (aarch64_cortex-a53) ImmortalWrt 25.12.1 专用 APK 包。
+            仅构建 EasyTier 相关包，不含其他架构。
+          files: out/*.apk
+          prerelease: false
+          token: ${{ secrets.GITHUB_TOKEN }}
       - name: Publish build log to release
         if: always()
         uses: softprops/action-gh-release@v2
@@ -43,17 +55,3 @@ jobs:
           files: out/build.log
           prerelease: true
           token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Report failure log to issue
-        if: failure()
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            let log = '';
-            try { log = fs.readFileSync('out/build.log', 'utf8').slice(-60000); } catch (e) { log = 'no build.log: ' + e; }
-            await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: 'CI failure log ' + context.runId,
-              body: '~~~\n' + log + '\n~~~'
-            });
