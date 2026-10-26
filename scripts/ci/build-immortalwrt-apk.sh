@@ -33,12 +33,17 @@ if [ -n "$need" ]; then
   export TZ=UTC
   # CNB 容器把 /etc/localtime 做成了 bind mount，tzdata 的 postinst 会 mv 失败；
   # 临时用空脚本跳过它，避免整个 apt 事务回滚。
+  log "python3=$(command -v python3 || echo MISSING)"; python3 -V || true
+  ls -l /var/lib/dpkg/info/tzdata.postinst 2>&1 || true
   apt-mark hold tzdata || true
+  umount /etc/localtime 2>/dev/null && log "umount /etc/localtime ok" || log "umount /etc/localtime failed"
+  ln -snf /usr/share/zoneinfo/UTC /etc/localtime 2>/dev/null || true
   if [ -f /var/lib/dpkg/info/tzdata.postinst ]; then
     cp -f /var/lib/dpkg/info/tzdata.postinst /tmp/tzdata.postinst.bak || true
     printf '#!/bin/sh\nexit 0\n' > /var/lib/dpkg/info/tzdata.postinst
     chmod +x /var/lib/dpkg/info/tzdata.postinst
-    dpkg --configure tzdata || true
+    head -2 /var/lib/dpkg/info/tzdata.postinst
+    dpkg --configure tzdata && log "tzdata configured" || log "tzdata configure failed"
   fi
   apt-get update
   dpkg --configure -a || true
