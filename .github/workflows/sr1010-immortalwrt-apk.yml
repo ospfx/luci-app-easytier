@@ -14,6 +14,7 @@ on:
 
 permissions:
   contents: write
+  issues: write
 
 jobs:
   build-apk:
@@ -42,3 +43,17 @@ jobs:
           files: out/build.log
           prerelease: true
           token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Report failure log to issue
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let log = '';
+            try { log = fs.readFileSync('out/build.log', 'utf8').slice(-60000); } catch (e) { log = 'no build.log: ' + e; }
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: 'CI failure log ' + context.runId,
+              body: '~~~\n' + log + '\n~~~'
+            });
