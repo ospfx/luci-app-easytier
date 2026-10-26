@@ -67,12 +67,15 @@ if [ ! -x "$SDK_DIR/scripts/feeds" ]; then
     "https://mirror.nju.edu.cn/immortalwrt/releases/$VER/targets/$TARGET"
     "https://mirrors.ustc.edu.cn/immortalwrt/releases/$VER/targets/$TARGET"
     "https://mirrors.tuna.tsinghua.edu.cn/immortalwrt/releases/$VER/targets/$TARGET"
+    "https://mirrors.aliyun.com/immortalwrt/releases/$VER/targets/$TARGET"
+    "https://mirrors.cloud.tencent.com/immortalwrt/releases/$VER/targets/$TARGET"
+    "https://mirror.sjtu.edu.cn/immortalwrt/releases/$VER/targets/$TARGET"
   )
   ok=0
   for base in "${BASES[@]}"; do
     url="$base/$SDK_TARBALL"
     log "下载 $url"
-    if curl -fL --retry 3 --retry-delay 3 --connect-timeout 30 -o "$WORK/$SDK_TARBALL" "$url"; then
+    if curl --http1.1 -fL --retry 5 --retry-all-errors --retry-delay 3 -C - --connect-timeout 30 --max-time 1800 -o "$WORK/$SDK_TARBALL" "$url"; then
       ok=1; break
     fi
   done
