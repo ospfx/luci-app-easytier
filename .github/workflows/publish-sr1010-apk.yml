@@ -1,0 +1,36 @@
+name: Publish SR1010 APK from build artifact
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/publish-sr1010-apk.yml'
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download APK artifact from successful build
+        uses: actions/download-artifact@v4
+        with:
+          name: sr1010-immortalwrt-25.12.1-aarch64_cortex-a53-apk
+          run-id: 40345471035
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: dist
+      - name: List files
+        run: ls -l dist
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: sr1010-immortalwrt-25.12.1
+          name: SR1010 ImmortalWrt 25.12.1 APK
+          body: |
+            SR1010 (aarch64_cortex-a53) ImmortalWrt 25.12.1 专用 APK 包。
+            仅包含 EasyTier 相关包，不含其他架构。
+          files: dist/*
+          prerelease: false
+          token: ${{ secrets.GITHUB_TOKEN }}
