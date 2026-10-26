@@ -33,19 +33,21 @@ if [ -n "$need" ]; then
   export TZ=UTC
   # CNB 容器把 /etc/localtime 做成了 bind mount，tzdata 的 postinst 会 mv 失败；
   # 临时用空脚本跳过它，避免整个 apt 事务回滚。
-  log "python3=$(command -v python3 || echo MISSING)"; python3 -V || true
-  ls -l /var/lib/dpkg/info/tzdata.postinst 2>&1 || true
-  apt-mark hold tzdata || true
-  umount /etc/localtime 2>/dev/null && log "umount /etc/localtime ok" || log "umount /etc/localtime failed"
-  ln -snf /usr/share/zoneinfo/UTC /etc/localtime 2>/dev/null || true
-  if [ -f /var/lib/dpkg/info/tzdata.postinst ]; then
-    cp -f /var/lib/dpkg/info/tzdata.postinst /tmp/tzdata.postinst.bak || true
-    printf '#!/bin/sh\nexit 0\n' > /var/lib/dpkg/info/tzdata.postinst
-    chmod +x /var/lib/dpkg/info/tzdata.postinst
-    head -2 /var/lib/dpkg/info/tzdata.postinst
-    dpkg --configure tzdata && log "tzdata configured" || log "tzdata configure failed"
-  fi
   apt-get update
+  # CNB 容器 /etc/localtime 是 bind mount，tzdata postinst 的 mv 会失败；
+  # 先下载 deb、替换 postinst 为直接成功，再安装，避免 apt 事务回滚。
+  mkdir -p /tmp/tzfix && cd /tmp/tzfix
+  apt-get download tzdata || true
+  if ls tzdata_*.deb >/dev/null 2>&1; then
+    rm -rf tzdata
+    dpkg-deb -R tzdata_*.deb tzdata
+    printf '#!/bin/sh\nexit 0\n' > tzdata/DEBIAN/postinst
+    chmod 755 tzdata/DEBIAN/postinst
+    dpkg-deb -b tzdata tzdata-fixed.deb
+    dpkg -i tzdata-fixed.deb || true
+  fi
+  apt-mark hold tzdata || true
+  cd "$ROOT"
   dpkg --configure -a || true
   apt-get install -y --no-install-recommends \
     build-essential cmake pkg-config git curl wget ca-certificates \
