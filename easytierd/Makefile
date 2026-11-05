@@ -3,10 +3,17 @@
 #
 # 源码来自仓库根的 src/，交叉编译后安装 easytierd 与 easytierctl。
 #
+# 包版本跟随仓库根的 version.mk（EASYTIER_VERSION），与上游 EasyTier 版本号对齐，
+# 不再使用与上游脱节的独立版本号（原为 1.0.0）。
+# 注意：必须在本 Makefile 的第一行之后立即取 $(lastword $(MAKEFILE_LIST))，
+# 此时它仍是本文件；一旦 include 了 rules.mk，最后一项就变成 OpenWrt 的头文件了。
+ETD_MK_DIR:=$(dir $(lastword $(MAKEFILE_LIST)))
+
 include $(TOPDIR)/rules.mk
+-include $(ETD_MK_DIR)../version.mk
 
 PKG_NAME:=easytierd
-PKG_VERSION:=1.0.0
+PKG_VERSION:=$(or $(EASYTIER_VERSION),2.7.0)
 PKG_RELEASE:=1
 PKG_LICENSE:=Apache-2.0
 PKG_MAINTAINER:=ospfx

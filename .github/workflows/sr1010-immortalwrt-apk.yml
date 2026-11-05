@@ -1,57 +1,169 @@
-name: Build SR1010 ImmortalWrt APK
+name: SR1010 EasyTier C 重写版 APK (v2.7.0-c)
+
+# 只做一件事：给 SR1010（ImmortalWrt 25.12.1 / aarch64_cortex-a53）出 C 重写版的 APK 包，
+# 并把它发布成唯一的设备版 Release —— tag 和版本号与上游 EasyTier 对齐（v2.7.0 + -c 表示 C 重写），
+# 不再使用 sr1010-immortalwrt-… 这种"原版风格"的 tag，也不再产生 ci-log-* 垃圾 tag。
+#
+# 发布内容只有 C 重写版的三个包：
+#   easytierd-<ver>-r1.apk            C 后端（/usr/sbin/easytierd + easytierctl）
+#   luci-app-easytier-<ver>-r1.apk    LuCI 界面
+#   luci-i18n-easytier-zh-cn-<ver>.apk 简体中文语言包
+# 上游官方的 easytier / easytier-noweb 核心二进制不再塞进本 Release。
 
 on:
   workflow_dispatch:
   push:
+    # 只在 main 上发版，防止从特性分支 push 时误删/误发 Release
+    branches:
+      - main
     paths:
       - 'easytierd/**'
       - 'src/**'
       - 'luci-app-easytier/**'
-      - 'easytier/**'
-      - 'easytier-noweb/**'
+      - 'version.mk'
       - 'scripts/ci/**'
       - '.github/workflows/sr1010-immortalwrt-apk.yml'
 
 permissions:
   contents: write
-  issues: write
+
+concurrency:
+  group: sr1010-easytier-c-apk
+  cancel-in-progress: false
+
+env:
+  TZ: Asia/Shanghai
+  RELEASE_TAG: v2.7.0-c
+  RELEASE_NAME: v2.7.0-c (aarch64_cortex-a53)
 
 jobs:
   build-apk:
+    name: Build + publish v2.7.0-c APK
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Show package versions
+        run: |
+          echo "version.mk: $(grep -E '^EASYTIER_VERSION=' version.mk)"
+          grep -nE 'PKG_VERSION' easytierd/Makefile luci-app-easytier/Makefile || true
+
       - name: Build ImmortalWrt 25.12.1 APK (aarch64_cortex-a53)
         shell: bash
         run: |
           set -o pipefail
           mkdir -p out
           bash scripts/ci/build-immortalwrt-apk.sh 2>&1 | tee out/build.log
+
+      - name: Select only C 重写版 packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          shopt -s nullglob
+          for f in out/*.apk; do
+            b="$(basename "$f")"
+            case "$b" in
+              easytierd-*|luci-app-easytier-*|luci-i18n-easytier-*)
+                cp -v "$f" "release/$b"
+                ;;
+              *)
+                echo "skip（上游原版包，不进本 Release）: $b"
+                ;;
+            esac
+          done
+          echo '--- release/ ---'
+          ls -l release
+          test -n "$(find release -maxdepth 1 -name 'easytierd-*.apk' -print -quit)" || { echo 'ERROR: 缺少 easytierd APK'; exit 1; }
+          test -n "$(find release -maxdepth 1 -name 'luci-app-easytier-*.apk' -print -quit)" || { echo 'ERROR: 缺少 luci-app-easytier APK'; exit 1; }
+          test -n "$(find release -maxdepth 1 -name 'luci-i18n-easytier-*.apk' -print -quit)" || { echo 'ERROR: 缺少 luci-i18n-easytier APK'; exit 1; }
+          # 版本号必须和 version.mk 对齐（防止 easytierd 退回 1.0.0 这类脱节版本号）
+          want="$(sed -n 's/^EASYTIER_VERSION=//p' version.mk | tr -d ' \r')"
+          echo "expected version: $want"
+          for f in release/*.apk; do
+            case "$(basename "$f")" in
+              *-"$want"-*|*"$want".apk) ;;
+              *) echo "ERROR: $(basename "$f") 的版本号不是 $want"; exit 1 ;;
+            esac
+          done
+
       - name: Upload APK artifacts
-        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: sr1010-immortalwrt-25.12.1-aarch64_cortex-a53-apk
-          path: out/*.apk
-      - name: Publish APK release
-        if: success()
+          path: release/*.apk
+
+      - name: Delete legacy releases and tags
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          for t in sr1010-immortalwrt-25.12.1-clean sr1010-immortalwrt-25.12.1; do
+            if gh release view "$t" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              gh release delete "$t" -R "$GITHUB_REPOSITORY" --yes --cleanup-tag && echo "deleted legacy release: $t"
+            fi
+            if gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$t" >/dev/null 2>&1; then
+              echo "deleted legacy tag: $t"
+            fi
+          done
+          gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/ci-log-" --jq '.[].ref' 2>/dev/null | while read -r ref; do
+            [ -n "$ref" ] || continue
+            if gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/${ref#refs/}" >/dev/null 2>&1; then
+              echo "deleted ci-log tag: ${ref#refs/tags/}"
+            fi
+          done
+          echo '--- remaining tags ---'
+          git ls-remote --tags "https://github.com/$GITHUB_REPOSITORY.git" | sed 's#.*refs/tags/##' || true
+
+      - name: Publish v2.7.0-c release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: sr1010-immortalwrt-25.12.1
-          name: SR1010 ImmortalWrt 25.12.1 APK
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: ${{ env.RELEASE_NAME }}
+          make_latest: true
+          overwrite_files: true
+          files: release/*.apk
           body: |
-            SR1010 (aarch64_cortex-a53) ImmortalWrt 25.12.1 专用 APK 包。
-            仅构建 EasyTier 相关包，不含其他架构。
-          files: out/*.apk
-          prerelease: false
-          token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Publish build log to release
-        if: always()
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ci-log-${{ github.run_id }}
-          name: CI log ${{ github.run_id }}
-          body: ${{ github.sha }}
-          files: out/build.log
-          prerelease: true
-          token: ${{ secrets.GITHUB_TOKEN }}
+            ## EasyTier LuCI C 重写版 · v2.7.0-c
+
+            版本号与上游 EasyTier / 仓库 `version.mk` 的 `EASYTIER_VERSION` 对齐：**2.7.0**。
+            后缀 `-c` 表示这是 **C 重写版**（原 Lua + Shell 后端整体重写为 C，作者 ospfx）。
+            不再使用 `1.0.0` 这类与上游脱节的独立版本号。
+
+            **目标设备 / Target**：SR1010 · ImmortalWrt 25.12.1 · **aarch64_cortex-a53**（apk 包管理器）
+
+            ### 本 Release 只含 C 重写版三个包
+
+            | 包 | 内容 |
+            | --- | --- |
+            | `easytierd-2.7.0-r1.apk` | C 后端：`/usr/sbin/easytierd`（守护进程）+ `/usr/sbin/easytierctl`（管理 CLI） |
+            | `luci-app-easytier-2.7.0-r1.apk` | LuCI 界面：菜单、6 个页面模板、`/etc/init.d/easytier`、UCI 默认配置、rpcd ACL、i18n |
+            | `luci-i18n-easytier-zh-cn-2.7.0.apk` | 简体中文语言包 |
+
+            上游官方的 `easytier` / `easytier-noweb` 核心二进制**不在**本 Release 内，请从
+            [EasyTier 官方 Release](https://github.com/EasyTier/EasyTier/releases) 下载对应架构，
+            或在 LuCI「VPN → EasyTier → 上传程序」页手动上传。
+
+            ### 安装（顺序不能反）
+
+            ```sh
+            apk add --allow-untrusted easytierd-2.7.0-r1.apk
+            apk add --allow-untrusted luci-app-easytier-2.7.0-r1.apk
+            apk add --allow-untrusted luci-i18n-easytier-zh-cn-2.7.0.apk
+            ```
+
+            `luci-app-easytier` 强依赖 `easytierd`：先装 `easytierd`，否则界面能开但所有接口都会失败。
+
+            ### 与通用版 `v2.7.0` 的区别
+
+            - `v2.7.0`：多架构通用 ipk（x86_64 / aarch64_generic / mipsel_24kc），opkg 固件用。
+            - `v2.7.0-c`（本 Release）：SR1010 / ImmortalWrt 25.12.1 / aarch64_cortex-a53 的 apk 包，
+              只发 C 重写版包。
+
+            构建来源：commit `${{ github.sha }}`，Actions run `${{ github.run_id }}`。
+            移植取舍与已知差异见仓库 `docs/C-PORT.md`。
