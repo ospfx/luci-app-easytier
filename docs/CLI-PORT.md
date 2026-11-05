@@ -128,4 +128,30 @@ kill -INT %1
 - **响应里 PeerManageRpc 的大响应被 zstd 压缩**（`28 b5 2f fd` 魔数），因为客户端广播了 `accepted_algo=Zstd`。
   C 实现里我们广播 `accepted_algo=None` 就能拿到未压缩响应，从而**不必在 C 里引入 zstd**（待实测确认）。
 
-待办：确认 method_index 与 proto 声明的对应表（PeerManageRpc 1/3/7 分别是什么），以及 `accepted_algo=None` 是否真的让 core 不压缩。
+### 7.1 `peer` 的响应消息（zstd 解压后逐字段读出）
+
+```
+WebClientService/5  -> { 1:{ 1:UUID{1..4}, 3:46 } }            # 列出网络实例，拿 instance uuid
+WebClientService/8  -> { 1:{ 1:UUID, 2:"ettest", 3:3, 4:"default", 5:1 }, 3:48 }   # 实例配置
+PeerManageRpc/7     -> { 1: PeerInfo, 3:4810 }                  # 列 peer（本机只有自己一条）
+PeerManageRpc/1     -> { 3:56 }                                 # 小计数
+PeerManageRpc/3     -> { 3:39 }                                 # 小计数
+```
+
+PeerInfo（本机自环那条的实测字段）：
+
+```
+1: peer_id      = 611652664
+4: hostname     = "ImmortalWrt"
+5: (34B)        6: (36B)                 # 未定，疑似 ipv4/ipv6 或地址结构
+7: (repeated)   = tcp://0.0.0.0:11010 … wss://[::]:11012   # listeners
+8: (397B)                                # 未定，疑似 route/统计子消息
+9: version      = "2.7.0-8b7f1f01"
+10/11: (小字节)                           # 未定，疑似 cost/nat 类型
+```
+
+表格列 `| ipv4 | hostname | cost | lat(ms) | loss | rx | tx | tunnel | NAT | version |` 里，
+`hostname`/`version` 已确认；`ipv4`/`cost`/`lat`/`loss`/`rx`/`tx`/`tunnel`/`NAT` 还需要对照
+上游 `easytier-cli.rs` 里 PeerInfo→表格的映射逐条定（下一步做，也可以用多节点网络造出真实 peer 行）。
+
+待办：`accepted_algo=None` 是否让 core 不压缩（决定 C 里要不要带 zstd）。
