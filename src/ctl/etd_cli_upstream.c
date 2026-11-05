@@ -166,11 +166,16 @@ static int fetch_node_info(const char *addr, struct node_info *ni)
 		p = inner;
 		n = ilen;
 	}
-	if (et_pb_find(p, n, 2, 2, NULL, &p, &n)) {
-		size_t l = n < sizeof(ni->cidr) - 1 ? n : sizeof(ni->cidr) - 1;
+	{
+		const uint8_t *cp = NULL;
+		size_t cl = 0;
 
-		memcpy(ni->cidr, p, l);
-		ni->cidr[l] = 0;
+		if (et_pb_find(p, n, 2, 2, NULL, &cp, &cl)) {
+			size_t l = cl < sizeof(ni->cidr) - 1 ? cl : sizeof(ni->cidr) - 1;
+
+			memcpy(ni->cidr, cp, l);
+			ni->cidr[l] = 0;
+		}
 	}
 	if (et_pb_find(p, n, 1, 0, &ni->peer_id, NULL, NULL) &&
 	    et_pb_find(p, n, 4, 2, NULL, &p, &n)) {
