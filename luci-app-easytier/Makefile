@@ -15,8 +15,13 @@
 # 业务逻辑全部在 easytierd/easytierctl（C）里，因此运行时依赖 +easytierd。
 #
 
+# 版本号跟随仓库根的 version.mk（EASYTIER_VERSION）。
+# 必须在 include rules.mk 之前取 $(lastword $(MAKEFILE_LIST))，否则路径会落到
+# OpenWrt 的头文件目录，-include 静默失败、版本号永远吃下面的兜底值。
+ETD_MK_DIR:=$(dir $(lastword $(MAKEFILE_LIST)))
+
 include $(TOPDIR)/rules.mk
--include $(dir $(lastword $(MAKEFILE_LIST)))../version.mk
+-include $(ETD_MK_DIR)../version.mk
 
 PKG_VERSION:=$(or $(EASYTIER_VERSION),2.7.0)
 PKG_RELEASE:=1

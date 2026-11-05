@@ -1,5 +1,10 @@
+# 版本号跟随仓库根的 version.mk（EASYTIER_VERSION）。
+# 注意：必须在 include rules.mk 之前取 $(lastword $(MAKEFILE_LIST))，否则拿到的是
+# OpenWrt 的头文件路径，-include 会静默失败，版本号一直吃下面的兜底值。
+ETD_MK_DIR:=$(dir $(lastword $(MAKEFILE_LIST)))
+
 include $(TOPDIR)/rules.mk
--include $(dir $(lastword $(MAKEFILE_LIST)))../version.mk
+-include $(ETD_MK_DIR)../version.mk
 
 PKG_NAME:=easytier-noweb
 PKG_VERSION:=$(or $(EASYTIER_VERSION),2.7.0)
