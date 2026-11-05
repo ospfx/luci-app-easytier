@@ -154,4 +154,28 @@ PeerInfo（本机自环那条的实测字段）：
 `hostname`/`version` 已确认；`ipv4`/`cost`/`lat`/`loss`/`rx`/`tx`/`tunnel`/`NAT` 还需要对照
 上游 `easytier-cli.rs` 里 PeerInfo→表格的映射逐条定（下一步做，也可以用多节点网络造出真实 peer 行）。
 
+### 7.2 PeerInfo 的实际字段（深度解码）
+
+`PeerManageRpc/7` 的响应是 `{1: NodeInfo, 3: <计数>}`，NodeInfo 实测：
+
+```
+1  = peer_id            = 611652664
+4  = hostname           = "ImmortalWrt"
+5  = stun_info { 1: udp_nat_type=5, 2: 3, 3: unix_ts, 4: "120.245.26.127", 5: 34698, 6: 34698 }
+6  = instance uuid 字符串 "197272bc-f32f-4c0e-a984-6e8515a91338"
+7  = listeners (repeated string) + 一条嵌套的 field14
+8  = { 13: f64, 13: f64, 6: msg, 7: msg, 4: 34 }      # 疑似连接/统计，列 lat/loss/rx/tx 可能来自这里
+9  = version            = "2.7.0-8b7f1f01"
+10 = { 3:1, 5:1, 6:1 }     11 = { 1: msg, 2: msg }
+```
+
+上游 `easytier-cli.rs:1859-1941` 的映射：
+- 第一行永远是本机的 `NodeInfo`：`cost="Local"`、`lat/loss/rx/tx/tunnel="-"`、`NAT` 取自 `stun_info.udp_nat_type`、
+  `version` 取 field 9、`hostname` 取 field 4、`cidr` 取 `ipv4_addr`（本机为空）；
+- 其余行来自 `PeerRoutePair{route, stats}`：`cidr/ipv4` 取 `route.ipv4_addr`，`cost` 由 `route.cost` 映射，
+  `lat(ms)` = cost==1 时用 stats 的延迟、否则用 `route.path_latency_latency_first`，
+  `loss/rx/tx/tunnel` 全来自 stats（rx/tx 用十进制 humanize），`NAT` 取 `stats.udp_nat_type`。
+
+**单机场景只需要 NodeInfo 这一行就能 100% 复刻**；多 peer 行要造一个两节点网络再抓一次。
+
 待办：`accepted_algo=None` 是否让 core 不压缩（决定 C 里要不要带 zstd）。
