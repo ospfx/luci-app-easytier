@@ -94,6 +94,7 @@ static void render_table(int ncol, const char *const *hdr, int nrow,
 
 struct node_info {
 	uint64_t peer_id;
+	char cidr[64];
 	char hostname[128];
 	char public_ip[64];
 	uint64_t nat_type;
@@ -164,6 +165,12 @@ static int fetch_node_info(const char *addr, struct node_info *ni)
 			goto close;
 		p = inner;
 		n = ilen;
+	}
+	if (et_pb_find(p, n, 2, 2, NULL, &p, &n)) {
+		size_t l = n < sizeof(ni->cidr) - 1 ? n : sizeof(ni->cidr) - 1;
+
+		memcpy(ni->cidr, p, l);
+		ni->cidr[l] = 0;
 	}
 	if (et_pb_find(p, n, 1, 0, &ni->peer_id, NULL, NULL) &&
 	    et_pb_find(p, n, 4, 2, NULL, &p, &n)) {
@@ -266,7 +273,7 @@ int et_cli_peer(const char *addr)
 	if (fetch_node_info(addr, &ni))
 		return 1;
 	u64_str(id, sizeof(id), ni.peer_id);
-	row[0] = (char *)"";
+	row[0] = ni.cidr;
 	row[1] = ni.hostname;
 	row[2] = (char *)"Local";
 	row[3] = (char *)"-";
@@ -305,7 +312,7 @@ int et_cli_route(const char *addr)
 
 	if (fetch_node_info(addr, &ni))
 		return 1;
-	row[0] = (char *)"";
+	row[0] = ni.cidr;
 	row[1] = ni.hostname;
 	row[2] = (char *)"";
 	row[3] = (char *)"-";
@@ -331,7 +338,7 @@ int et_cli_node(const char *addr)
 	struct node_info ni;
 	char id[32];
 	char label[NI_MAX_LISTENERS][16];
-	const char *hdr[] = { "Virtual IP", "" };
+	const char *hdr[2];
 	char *cells[6 + NI_MAX_LISTENERS][2];
 	char **rows[6 + NI_MAX_LISTENERS];
 	int nrow = 0;
@@ -339,6 +346,10 @@ int et_cli_node(const char *addr)
 	if (fetch_node_info(addr, &ni))
 		return 1;
 	u64_str(id, sizeof(id), ni.peer_id);
+
+	/* 上游 node 首行即表头：["Virtual IP", ipv4_addr] */
+	hdr[0] = "Virtual IP";
+	hdr[1] = ni.cidr;
 
 	cells[nrow][0] = (char *)"Hostname";
 	cells[nrow][1] = ni.hostname;
