@@ -2,6 +2,7 @@
  * easytierctl.c - 管理 CLI
  *
  * 极薄 Lua 转发层只调用本程序，不包含任何业务逻辑：
+ *   easytierctl peer|route|node [-p <addr>]  与上游 easytier-cli 同名子命令（Markdown 表格）
  *   easytierctl api <method> [key=value ...]     输出 handler 的原始响应
  *   easytierctl api <method> --body-file <path>  附带 POST 体
  *   easytierctl service <start|stop|restart|status|enable|disable>
@@ -10,6 +11,7 @@
  */
 #include "etd.h"
 #include "etd_api.h"
+#include "etd_cli.h"
 #include "etd_proc.h"
 #include "etd_util.h"
 
@@ -19,15 +21,20 @@
 #include <unistd.h>
 #include <sys/wait.h>
 
+#define ET_RPC_DEFAULT "127.0.0.1:15888"
+
 static void usage(FILE *fp)
 {
 	fprintf(fp,
 		"easytierctl %s - luci-app-easytier 管理 CLI\n"
 		"用法:\n"
+		"  easytierctl [-p <addr>] peer|route|node\n"
 		"  easytierctl api <method> [key=value ...] [--body-file <path>]\n"
 		"  easytierctl service <start|stop|restart|status|enable|disable>\n"
-		"  easytierctl version | doctor\n",
-		ETD_VERSION);
+		"  easytierctl version | doctor\n"
+		"\n"
+		"  -p, --rpc-portal <addr>  core 的 rpc-portal 地址（默认 %s）\n",
+		ETD_VERSION, ET_RPC_DEFAULT);
 }
 
 static int do_api(int argc, char **argv)
@@ -146,7 +153,9 @@ static int do_doctor(void)
 
 int main(int argc, char **argv)
 {
+	const char *rpc = ET_RPC_DEFAULT;
 	int i = 1;
+
 	while (i < argc && argv[i][0] == '-' && argv[i][1] != '\0') {
 		if (!strcmp(argv[i], "-v") || !strcmp(argv[i], "--verbose")) {
 			et_debug = 1;
@@ -157,6 +166,10 @@ int main(int argc, char **argv)
 		} else if (!strcmp(argv[i], "-V") || !strcmp(argv[i], "--version")) {
 			printf("easytierctl %s\n", ETD_VERSION);
 			return 0;
+		} else if ((!strcmp(argv[i], "-p") || !strcmp(argv[i], "--rpc-portal")) &&
+			   i + 1 < argc) {
+			rpc = argv[++i];
+			i++;
 		} else {
 			fprintf(stderr, "未知选项: %s\n", argv[i]);
 			return 2;
@@ -167,6 +180,12 @@ int main(int argc, char **argv)
 		return 2;
 	}
 	const char *cmd = argv[i++];
+	if (!strcmp(cmd, "peer"))
+		return et_cli_peer(rpc);
+	if (!strcmp(cmd, "route"))
+		return et_cli_route(rpc);
+	if (!strcmp(cmd, "node"))
+		return et_cli_node(rpc);
 	if (!strcmp(cmd, "api"))
 		return do_api(argc - i, argv + i);
 	if (!strcmp(cmd, "service"))
