@@ -8,6 +8,7 @@
  *
  * 数据来源与字段映射见 docs/CLI-PORT.md（抓包实测）。
  */
+#include "etd.h"
 #include "etd_cli.h"
 #include "etd_pb.h"
 #include "etd_rpc.h"
@@ -128,8 +129,33 @@ static int fetch_node_info(const char *addr, struct node_info *ni)
 		fprintf(stderr, "easytier-cli: failed to get node info\n");
 		goto close;
 	}
+	if (et_debug) {
+		fprintf(stderr, "[dbg] uuid:");
+		for (size_t k = 0; k < sizeof(uuid); k++)
+			fprintf(stderr, "%02x", uuid[k]);
+		fprintf(stderr, "\n[dbg] req:");
+		for (size_t k = 0; k < body.len; k++)
+			fprintf(stderr, "%02x", body.p[k]);
+		fprintf(stderr, "\n[dbg] resp(%zu):", resp.len);
+		for (size_t k = 0; k < resp.len && k < 400; k++)
+			fprintf(stderr, "%02x", resp.p[k]);
+		fprintf(stderr, "\n");
+	}
 	if (!et_pb_find(resp.p, resp.len, 1, 2, NULL, &p, &n))
 		goto close;
+	/* 实际报文是 body -> {1: ...} -> {1: NodeInfo}，逐层下探到含 hostname(field 4)
+	 * 的那一层，避免写死层数。 */
+	for (int depth = 0; depth < 4; depth++) {
+		const uint8_t *inner = NULL;
+		size_t ilen = 0;
+
+		if (et_pb_find(p, n, 4, 2, NULL, &inner, &ilen))
+			break;
+		if (!et_pb_find(p, n, 1, 2, NULL, &inner, &ilen))
+			goto close;
+		p = inner;
+		n = ilen;
+	}
 	if (et_pb_find(p, n, 1, 0, &ni->peer_id, NULL, NULL) &&
 	    et_pb_find(p, n, 4, 2, NULL, &p, &n)) {
 		size_t l = n < sizeof(ni->hostname) - 1 ? n : sizeof(ni->hostname) - 1;
@@ -137,7 +163,28 @@ static int fetch_node_info(const char *addr, struct node_info *ni)
 		memcpy(ni->hostname, p, l);
 		ni->hostname[l] = 0;
 	}
-	if (et_pb_find(resp.p, resp.len, 1, 2, NULL, &p, &n)) {
+	{
+		const uint8_t *q = NULL;
+		size_t m = 0;
+
+		/* 重新定位 NodeInfo（上面 p/n 已被 hostname 覆盖） */
+		if (!et_pb_find(resp.p, resp.len, 1, 2, NULL, &q, &m))
+			goto close;
+		for (int depth = 0; depth < 4; depth++) {
+			const uint8_t *inner = NULL;
+			size_t ilen = 0;
+
+			if (et_pb_find(q, m, 4, 2, NULL, &inner, &ilen))
+				break;
+			if (!et_pb_find(q, m, 1, 2, NULL, &inner, &ilen))
+				break;
+			q = inner;
+			m = ilen;
+		}
+		p = q;
+		n = m;
+	}
+	{
 		const uint8_t *q = NULL;
 		size_t m = 0;
 
