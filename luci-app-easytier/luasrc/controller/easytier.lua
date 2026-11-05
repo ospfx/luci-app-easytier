@@ -9,7 +9,7 @@ local http = require "luci.http"
 local util = require "luci.util"
 local sys  = require "luci.sys"
 
-local CTL = "/usr/sbin/easytierctl"
+local CTL = "/usr/bin/easytier-cli"
 
 -- 24 个原有端点（URL == 方法名，顺序与旧 index() 一致）+ 配置页新增 4 个
 local EP = {

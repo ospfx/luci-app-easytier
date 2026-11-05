@@ -1,8 +1,8 @@
 /*
- * easytierctl.c - 管理 CLI
+ * easytierctl.c - 管理 CLI（安装名 easytier-cli，与上游同名）
  *
  * 极薄 Lua 转发层只调用本程序，不包含任何业务逻辑：
- *   easytierctl peer|route|node [-p <addr>]  与上游 easytier-cli 同名子命令（Markdown 表格）
+ *   easytier-cli peer|route|node [-p <addr>]  与上游 easytier-cli 同名子命令（Markdown 表格）
  *   easytierctl api <method> [key=value ...]     输出 handler 的原始响应
  *   easytierctl api <method> --body-file <path>  附带 POST 体
  *   easytierctl service <start|stop|restart|status|enable|disable>
@@ -26,12 +26,12 @@
 static void usage(FILE *fp)
 {
 	fprintf(fp,
-		"easytierctl %s - luci-app-easytier 管理 CLI\n"
+		"easytier-cli %s - EasyTier 管理 CLI（luci-app-easytier C 重写版）\n"
 		"用法:\n"
-		"  easytierctl [-p <addr>] peer|route|node\n"
-		"  easytierctl api <method> [key=value ...] [--body-file <path>]\n"
-		"  easytierctl service <start|stop|restart|status|enable|disable>\n"
-		"  easytierctl version | doctor\n"
+		"  easytier-cli [-p <addr>] peer|route|node\n"
+		"  easytier-cli api <method> [key=value ...] [--body-file <path>]\n"
+		"  easytier-cli service <start|stop|restart|status|enable|disable>\n"
+		"  easytier-cli version | doctor\n"
 		"\n"
 		"  -p, --rpc-portal <addr>  core 的 rpc-portal 地址（默认 %s）\n",
 		ETD_VERSION, ET_RPC_DEFAULT);
@@ -69,7 +69,7 @@ static int do_api(int argc, char **argv)
 	int rc = et_api_dispatch(&req, &res);
 
 	if (rc == ET_ENOENT)
-		fprintf(stderr, "easytierctl: 未知方法 %s\n", argv[0]);
+		fprintf(stderr, "easytier-cli: 未知方法 %s\n", argv[0]);
 
 	if (res.body.p && res.body.len) {
 		fwrite(res.body.p, 1, res.body.len, stdout);
@@ -117,7 +117,7 @@ static int do_doctor(void)
 {
 	char ts[32];
 	et_now_str(ts, sizeof(ts));
-	printf("easytierctl %s\n", ETD_VERSION);
+	printf("easytier-cli %s\n", ETD_VERSION);
 	printf("时间            : %s\n", ts);
 	printf("uci 配置        : %s (%s)\n", ET_FILE_UCI,
 	       et_file_exists(ET_FILE_UCI) ? "存在" : "缺失");
@@ -164,7 +164,7 @@ int main(int argc, char **argv)
 			usage(stdout);
 			return 0;
 		} else if (!strcmp(argv[i], "-V") || !strcmp(argv[i], "--version")) {
-			printf("easytierctl %s\n", ETD_VERSION);
+			printf("easytier-cli %s\n", ETD_VERSION);
 			return 0;
 		} else if ((!strcmp(argv[i], "-p") || !strcmp(argv[i], "--rpc-portal")) &&
 			   i + 1 < argc) {
@@ -191,7 +191,7 @@ int main(int argc, char **argv)
 	if (!strcmp(cmd, "service"))
 		return do_service(argc - i, argv + i);
 	if (!strcmp(cmd, "version")) {
-		printf("easytierctl %s\n", ETD_VERSION);
+		printf("easytier-cli %s\n", ETD_VERSION);
 		return 0;
 	}
 	if (!strcmp(cmd, "doctor"))

@@ -4,14 +4,14 @@
     "read": {
       "uci": [ "easytier" ],
       "file": {
-        "/usr/sbin/easytierctl": [ "exec" ]
+        "/usr/bin/easytier-cli": [ "exec" ]
       },
       "cgi-io": [ "upload" ]
     },
     "write": {
       "uci": [ "easytier" ],
       "file": {
-        "/usr/sbin/easytierctl": [ "exec" ]
+        "/usr/bin/easytier-cli": [ "exec" ]
       }
     }
   }

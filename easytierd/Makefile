@@ -53,7 +53,7 @@ endef
 define Package/easytierd/install
 	$(INSTALL_DIR) $(1)/usr/sbin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/build/easytierd $(1)/usr/sbin/easytierd
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/build/easytierctl $(1)/usr/sbin/easytierctl
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/build/easytierctl $(1)/usr/bin/easytier-cli
 endef
 
 $(eval $(call BuildPackage,easytierd))
