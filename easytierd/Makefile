@@ -43,7 +43,7 @@ endef
 define Build/Compile
 	$(MAKE) -C $(PKG_BUILD_DIR) \
 		CC="$(TARGET_CC)" \
-		CFLAGS="$(TARGET_CFLAGS) $(TARGET_CPPFLAGS) -std=gnu11 -D_GNU_SOURCE -Iinclude -Wall -Wextra -Werror -DETD_VERSION=\"$(PKG_VERSION)\"" \
+		CFLAGS="$(TARGET_CFLAGS) $(TARGET_CPPFLAGS) -std=gnu11 -D_GNU_SOURCE -Iinclude -Wall -Wextra -Werror -DETD_VERSION_NUM=$(PKG_VERSION)" \
 		LDFLAGS="$(TARGET_LDFLAGS)" \
 		STAGING="$(STAGING_DIR)/usr" \
 		LIBS="-luci -ljson-c" \

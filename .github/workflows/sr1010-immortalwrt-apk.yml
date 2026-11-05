@@ -58,6 +58,30 @@ jobs:
           mkdir -p out
           bash scripts/ci/build-immortalwrt-apk.sh 2>&1 | tee out/build.log
 
+      - name: Publish build log on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          log=out/build.log
+          if [ ! -f "$log" ]; then
+            echo "no build.log produced"
+            exit 0
+          fi
+          tail -n 500 "$log" > /tmp/ci-fail.log
+          b64="$(base64 -w0 /tmp/ci-fail.log)"
+          path="ci-fail-${{ github.run_id }}.log"
+          if ! gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/ci-logs" >/dev/null 2>&1; then
+            gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f ref="refs/heads/ci-logs" -f sha="${{ github.sha }}" >/dev/null || true
+          fi
+          gh api -X PUT "repos/$GITHUB_REPOSITORY/contents/$path" \
+            -f message="ci: failure log ${{ github.run_id }}" \
+            -f content="$b64" -f branch="ci-logs" >/dev/null || echo "publish failed"
+          echo "published $path"
+
       - name: Select only C 重写版 packages
         shell: bash
         run: |

@@ -14,10 +14,16 @@
 
 #define ETD_PROG "easytierd"
 /* 版本号与仓库根 version.mk 的 EASYTIER_VERSION 对齐（2.7.0）。
- * 打包时由 easytierd/Makefile 用 -DETD_VERSION=\"$(PKG_VERSION)\" 覆盖，
- * 这里的默认值只服务于本地/测试构建，改动时请同步 version.mk。 */
+ * 打包时由 easytierd/Makefile 传 -DETD_VERSION_NUM=$(PKG_VERSION)（纯数字宏，
+ * 不需要 shell 引号），这里字符串化后即 "2.7.0"；本地/测试构建走默认值。 */
 #ifndef ETD_VERSION
+#ifdef ETD_VERSION_NUM
+#define ETD_STR_INNER(x) #x
+#define ETD_STR(x) ETD_STR_INNER(x)
+#define ETD_VERSION ETD_STR(ETD_VERSION_NUM)
+#else
 #define ETD_VERSION "2.7.0"
+#endif
 #endif
 
 /* ---- 可外部覆盖的路径（测试时可 -D 覆盖） ---- */
