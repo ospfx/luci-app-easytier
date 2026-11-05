@@ -97,5 +97,35 @@ generate-completions。
 | Interface IPv4 | 10.0.15.254             |
 ```
 
-待办：用 `tcpdump -i any`（本机 `lo` 抓不到，需换 `any`）拿请求/响应字节，定死
-`proto_name` / `service_name` / `method_index` 与各响应消息字段，再开写 C 实现。
+## 7. 线上字节（已抓包解码，2026-11-06）
+
+抓法（`-w` 在这台机器写不出文件，直接打屏再解析）：
+
+```sh
+tcpdump -i any -x -n port 15888 > /root/cap.txt &
+sleep 2; /root/et/easytier-cli -p 127.0.0.1:15888 peer
+kill -INT %1
+```
+
+`peer` 一次调用的实际报文（已按 `[u32LE 帧长][16B PeerManagerHeader][RpcPacket]` 解开）：
+
+```
+帧长 85 | pm{from=1,to=1,ptype=8,flags=0,fwd=1,len=69}
+        | RpcPacket{ 1:from=1, 2:to=1, 3:txid, 4:{2:"WebClientService",3:"WebClientService",4:5},
+                    5:body(18 88 27), 6:is_request=1, 7:total_pieces=1,
+                    10:{1:algo=None, 2:accepted_algo=Zstd} }
+帧长 113| desc service=WebClientService method=8   body: 12 1a 0a 18 <uuid 24B> 18 88 27
+帧长 109| desc service=PeerManageRpc    method=7   body: 12 1c 0a 1a 0a 18 <uuid> 18 88 27
+帧长 109| desc service=PeerManageRpc    method=1   body: 同上
+帧长 109| desc service=PeerManageRpc    method=3   body: 同上
+响应     | pm.packet_type=9（RpcResp），descriptor 与请求一致，txid 不变
+```
+
+要点：
+- `ptype` 8=请求、9=响应；`flags=0`；`forward_counter=1`；`reserved=0`；`pm.len` = RpcPacket 字节数。
+- descriptor 的 `proto_name` 与 `service_name` 目前看到是同一个字符串（`WebClientService` / `PeerManageRpc`），`method_index` 是该 service 内 `rpc` 的声明序号。
+- 请求体是 `{ 2: { 1: { instance_id, timeout_ms=5000 } } }` 这种包装；`18 88 27` = varint 5000。
+- **响应里 PeerManageRpc 的大响应被 zstd 压缩**（`28 b5 2f fd` 魔数），因为客户端广播了 `accepted_algo=Zstd`。
+  C 实现里我们广播 `accepted_algo=None` 就能拿到未压缩响应，从而**不必在 C 里引入 zstd**（待实测确认）。
+
+待办：确认 method_index 与 proto 声明的对应表（PeerManageRpc 1/3/7 分别是什么），以及 `accepted_algo=None` 是否真的让 core 不压缩。
