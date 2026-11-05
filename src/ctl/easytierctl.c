@@ -26,15 +26,39 @@
 static void usage(FILE *fp)
 {
 	fprintf(fp,
-		"easytier-cli %s - EasyTier 管理 CLI（luci-app-easytier C 重写版）\n"
-		"用法:\n"
-		"  easytier-cli [-p <addr>] peer|route|node\n"
-		"  easytier-cli api <method> [key=value ...] [--body-file <path>]\n"
-		"  easytier-cli service <start|stop|restart|status|enable|disable>\n"
-		"  easytier-cli version | doctor\n"
+		"A full meshed p2p VPN, connecting all your devices in one network with one command.\n"
 		"\n"
-		"  -p, --rpc-portal <addr>  core 的 rpc-portal 地址（默认 %s）\n",
-		ETD_VERSION, ET_RPC_DEFAULT);
+		"Usage: easytier-cli [OPTIONS] <COMMAND>\n"
+		"\n"
+		"Commands:\n"
+		"  peer              show peers info\n"
+		"  connector         manage connectors\n"
+		"  mapped-listener   manage mapped listeners\n"
+		"  stun              do stun test\n"
+		"  route             show route info\n"
+		"  peer-center       show global peers info\n"
+		"  vpn-portal        show vpn portal (wireguard) info\n"
+		"  node              inspect self easytier-core status\n"
+		"  service           manage easytier-core as a system service\n"
+		"  proxy             show tcp/kcp proxy status\n"
+		"  acl               show ACL rules statistics\n"
+		"  port-forward      manage port forwarding\n"
+		"  whitelist         manage TCP/UDP whitelist\n"
+		"  stats             show statistics information\n"
+		"  logger            manage logger configuration\n"
+		"  credential        manage temporary credentials\n"
+		"  gen-autocomplete  generate shell completions\n"
+		"  api               call an internal LuCI handler (this build only)\n"
+		"  doctor            environment self-check (this build only)\n"
+		"  version           print version (this build only)\n"
+		"  help              Print this message or the help of the given subcommand(s)\n"
+		"\n"
+		"Options:\n"
+		"  -p, --rpc-portal <addr>  easytier-core rpc portal address [default: %s]\n"
+		"  -v, --verbose            verbose output\n"
+		"  -h, --help               Print help\n"
+		"  -V, --version            Print version\n",
+		ET_RPC_DEFAULT);
 }
 
 static int do_api(int argc, char **argv)
@@ -180,6 +204,10 @@ int main(int argc, char **argv)
 		return 2;
 	}
 	const char *cmd = argv[i++];
+	if (!strcmp(cmd, "help")) {
+		usage(stdout);
+		return 0;
+	}
 	if (!strcmp(cmd, "peer"))
 		return et_cli_peer(rpc);
 	if (!strcmp(cmd, "route"))
