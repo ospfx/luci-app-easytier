@@ -59,3 +59,43 @@
 4. **合并与改名**：`easytierctl` → `easytier-cli`，`api/service/doctor` 作为子命令保留；
    Lua controller、`/etc/init.d/easytier`、i18n、文档同步。
 5. **发版**：在现有 `v2.7.0-c` Release 上删除旧资产、上传新资产（不新增 tag）。
+
+## 6. 现场实测记录（测试路由 root@10.0.15.254，aarch64）
+
+上游 `easytier-cli` = `2.7.0-8b7f1f01`，放在 `/root/et/`（`/tmp` 是 noexec，不能直接跑）。
+启动 core 做对照：
+
+```sh
+/root/et/easytier-core --no-tun --network-name ettest --network-secret ettest123 \
+  --rpc-portal 127.0.0.1:15888 &
+/root/et/easytier-cli -p 127.0.0.1:15888 peer
+```
+
+子命令全集（`easytier-cli -h`）：peer / connector / mapped-listener / stun / route / peer-center /
+vpn-portal / node / service / proxy / acl / port-forward / whitelist / stats / logger / credential /
+generate-completions。
+
+输出是 Markdown 表格（`tabled` 的 markdown 样式，前端 `parseTable()` 依赖它），实测样本：
+
+```text
+# peer
+| ipv4 | hostname    | cost  | lat(ms) | loss | rx | tx | tunnel | NAT            | version        |
+|------|-------------|-------|---------|------|----|----|--------|----------------|----------------|
+|      | ImmortalWrt | Local | -       | -    | -  | -  | -      | PortRestricted | 2.7.0-8b7f1f01 |
+
+# route
+| ipv4 | hostname | proxy_cidrs | next_hop_ipv4 | next_hop_hostname | next_hop_lat | path_len | path_latency | next_hop_ipv4_lat_first | next_hop_hostname_lat_first | path_len_lat_first | path_latency_lat_first | version |
+| ...  |          |             | -             | Local             | 0            | 0        | 0            | -                       | Local                       | 0                  | 0                      | 2.7.0-… |
+
+# node（单列键值对，第一行是表头）
+| Virtual IP     |                         |
+|----------------|-------------------------|
+| Hostname       | ImmortalWrt             |
+| Peer ID        | 611652664               |
+| Public IPv4    | 120.245.26.127          |
+| UDP Stun Type  | PortRestricted          |
+| Interface IPv4 | 10.0.15.254             |
+```
+
+待办：用 `tcpdump -i any`（本机 `lo` 抓不到，需换 `any`）拿请求/响应字节，定死
+`proto_name` / `service_name` / `method_index` 与各响应消息字段，再开写 C 实现。
