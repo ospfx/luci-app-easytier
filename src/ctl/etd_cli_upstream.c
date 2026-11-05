@@ -13,9 +13,13 @@
 #include "etd_pb.h"
 #include "etd_rpc.h"
 
+#include <arpa/inet.h>
+#include <ifaddrs.h>
+#include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
 
 #define NAT_UNKNOWN "Unknown"
 
@@ -223,6 +227,9 @@ static int fetch_node_info(const char *addr, struct node_info *ni)
 			while (et_pb_next(&r, &f, &w, &v, &b, &l) > 0) {
 				if (f != 7 || w != 2 || ni->n_listeners >= NI_MAX_LISTENERS)
 					continue;
+				/* 上游不展示内部 ring:// 监听 */
+				if (l >= 7 && !memcmp(b, "ring://", 7))
+					continue;
 				if (l >= NI_LISTENER_LEN)
 					l = NI_LISTENER_LEN - 1;
 				memcpy(ni->listeners[ni->n_listeners], b, l);
@@ -348,9 +355,40 @@ int et_cli_node(const char *addr)
 	cells[nrow][0] = (char *)"UDP Stun Type";
 	cells[nrow][1] = (char *)nat_type_str(ni.nat_type);
 	nrow++;
-	cells[nrow][0] = (char *)"Interface IPv4";
-	cells[nrow][1] = (char *)"";
-	nrow++;
+	/* Interface IPv4：与上游一致，列出本机非回环的 IPv4 地址（每行一个） */
+	{
+		struct ifaddrs *ifa = NULL;
+		int if_added = 0;
+
+		if (getifaddrs(&ifa) == 0) {
+			for (struct ifaddrs *it = ifa; it; it = it->ifa_next) {
+				char buf[INET_ADDRSTRLEN];
+
+				if (!it->ifa_addr || it->ifa_addr->sa_family != AF_INET)
+					continue;
+				if (!inet_ntop(AF_INET,
+					       &((struct sockaddr_in *)it->ifa_addr)->sin_addr,
+					       buf, sizeof(buf)))
+					continue;
+				if (!strcmp(buf, "127.0.0.1"))
+					continue;
+				if (nrow >= 6 + NI_MAX_LISTENERS)
+					break;
+				cells[nrow][0] = (char *)"Interface IPv4";
+				cells[nrow][1] = strdup(buf);
+				if (!cells[nrow][1])
+					break;
+				nrow++;
+				if_added++;
+			}
+			freeifaddrs(ifa);
+		}
+		if (!if_added) { /* 没有任何地址时也保留一行空值 */
+			cells[nrow][0] = (char *)"Interface IPv4";
+			cells[nrow][1] = (char *)"";
+			nrow++;
+		}
+	}
 	for (int i = 0; i < ni.n_listeners; i++) {
 		snprintf(label[i], sizeof(label[i]), "Listener %d", i + 1);
 		cells[nrow][0] = label[i];
