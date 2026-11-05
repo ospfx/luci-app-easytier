@@ -85,12 +85,17 @@ static void render_table(int ncol, const char *const *hdr, int nrow,
 
 /* ---------------- 取 NodeInfo ---------------- */
 
+#define NI_MAX_LISTENERS 16
+#define NI_LISTENER_LEN 64
+
 struct node_info {
 	uint64_t peer_id;
 	char hostname[128];
 	char public_ip[64];
 	uint64_t nat_type;
 	char version[64];
+	char listeners[NI_MAX_LISTENERS][NI_LISTENER_LEN];
+	int n_listeners;
 	int have;
 };
 
@@ -207,6 +212,24 @@ static int fetch_node_info(const char *addr, struct node_info *ni)
 				ni->public_ip[l] = 0;
 			}
 		}
+		{
+			/* field 7 是 repeated string（listeners），逐个扫一遍 */
+			et_pb_rd r;
+			unsigned f, w;
+			const uint8_t *b = NULL;
+			size_t l = 0;
+
+			et_pb_rd_init(&r, p, n);
+			while (et_pb_next(&r, &f, &w, &v, &b, &l) > 0) {
+				if (f != 7 || w != 2 || ni->n_listeners >= NI_MAX_LISTENERS)
+					continue;
+				if (l >= NI_LISTENER_LEN)
+					l = NI_LISTENER_LEN - 1;
+				memcpy(ni->listeners[ni->n_listeners], b, l);
+				ni->listeners[ni->n_listeners][l] = 0;
+				ni->n_listeners++;
+			}
+		}
 	}
 	ni->have = 1;
 	rc = 0;
@@ -300,24 +323,42 @@ int et_cli_node(const char *addr)
 {
 	struct node_info ni;
 	char id[32];
+	char label[NI_MAX_LISTENERS][16];
 	const char *hdr[] = { "Virtual IP", "" };
-	char *rows[6][2];
+	char *cells[6 + NI_MAX_LISTENERS][2];
+	char **rows[6 + NI_MAX_LISTENERS];
+	int nrow = 0;
 
 	if (fetch_node_info(addr, &ni))
 		return 1;
 	u64_str(id, sizeof(id), ni.peer_id);
-	rows[0][0] = (char *)"Hostname";
-	rows[0][1] = ni.hostname;
-	rows[1][0] = (char *)"Proxy CIDRs";
-	rows[1][1] = (char *)"";
-	rows[2][0] = (char *)"Peer ID";
-	rows[2][1] = id;
-	rows[3][0] = (char *)"Public IPv4";
-	rows[3][1] = ni.public_ip;
-	rows[4][0] = (char *)"UDP Stun Type";
-	rows[4][1] = (char *)nat_type_str(ni.nat_type);
-	rows[5][0] = (char *)"Interface IPv4";
-	rows[5][1] = (char *)"";
-	render_table(2, hdr, 6, (char ***)rows);
+
+	cells[nrow][0] = (char *)"Hostname";
+	cells[nrow][1] = ni.hostname;
+	nrow++;
+	cells[nrow][0] = (char *)"Proxy CIDRs";
+	cells[nrow][1] = (char *)"";
+	nrow++;
+	cells[nrow][0] = (char *)"Peer ID";
+	cells[nrow][1] = id;
+	nrow++;
+	cells[nrow][0] = (char *)"Public IPv4";
+	cells[nrow][1] = ni.public_ip;
+	nrow++;
+	cells[nrow][0] = (char *)"UDP Stun Type";
+	cells[nrow][1] = (char *)nat_type_str(ni.nat_type);
+	nrow++;
+	cells[nrow][0] = (char *)"Interface IPv4";
+	cells[nrow][1] = (char *)"";
+	nrow++;
+	for (int i = 0; i < ni.n_listeners; i++) {
+		snprintf(label[i], sizeof(label[i]), "Listener %d", i + 1);
+		cells[nrow][0] = label[i];
+		cells[nrow][1] = ni.listeners[i];
+		nrow++;
+	}
+	for (int i = 0; i < nrow; i++)
+		rows[i] = cells[i];
+	render_table(2, hdr, nrow, rows);
 	return 0;
 }
