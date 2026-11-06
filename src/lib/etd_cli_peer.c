@@ -38,6 +38,8 @@ struct node_view {
 	int n_iface_v4;
 	char iface_v6[16][48];
 	int n_iface_v6;
+	/* NodeInfo 原始字节：-o json 时要按上游 serde 的字段全集输出 */
+	et_pb raw;
 };
 
 struct str_join {
@@ -218,9 +220,30 @@ static int listener_cb(const char *s, size_t n, void *ud)
 	return 0;
 }
 
+static void node_view_free(struct node_view *nv)
+{
+	et_pb_free(&nv->raw);
+	memset(nv, 0, sizeof(*nv));
+}
+
 static void node_view_parse(struct node_view *nv, const uint8_t *b, size_t n)
 {
 	memset(nv, 0, sizeof(*nv));
+	et_pb_init(&nv->raw);
+	if (b && n) {
+		if (nv->raw.cap < n) {
+			nv->raw.p = realloc(nv->raw.p, n);
+			if (!nv->raw.p) {
+				nv->raw.cap = 0;
+			} else {
+				nv->raw.cap = n;
+			}
+		}
+		if (nv->raw.p) {
+			memcpy(nv->raw.p, b, n);
+			nv->raw.len = n;
+		}
+	}
 	nv->have = 1;
 	{
 		uint64_t v = 0;
@@ -1192,18 +1215,800 @@ static int run_peer_list(struct et_cli_ctx *ctx)
 	return rc;
 }
 
+/* ===================== peer ipv6 / 外网列表 ===================== */
+
+static uint32_t ipv6_local_id; /* 排序用：本机行永远排最前 */
+
+/* common.Ipv6Inet -> "addr/len"；缺失时 "-"（上游 fmt_ipv6_inet） */
+static void fmt_ipv6inet_or_dash(const uint8_t *b, size_t n, char *out,
+				 size_t cap)
+{
+	const uint8_t *addr = NULL;
+	size_t addrlen = 0;
+	uint64_t plen = 0;
+	char ip[64] = "";
+
+	if (!b || !n || !et_pb_find(b, n, 1, 2, NULL, &addr, &addrlen)) {
+		snprintf(out, cap, "-");
+		return;
+	}
+	fmt_ipv6_addr(addr, addrlen, ip, sizeof(ip));
+	(void)et_pb_get_u64(b, n, 2, &plen);
+	snprintf(out, cap, "%s/%llu", ip, (unsigned long long)plen);
+}
+
+static void fmt_local_time_str(uint64_t secs, char *out, size_t cap)
+{
+	time_t t = (time_t)secs;
+	struct tm tmv;
+	char base[32];
+
+	localtime_r(&t, &tmv);
+	strftime(base, sizeof(base), "%Y-%m-%d %H:%M:%S", &tmv);
+	snprintf(out, cap, "%s", base);
+}
+
+static uint32_t pb_get_u32(const uint8_t *b, size_t n, unsigned field)
+{
+	uint64_t v = 0;
+
+	(void)et_pb_get_u64(b, n, field, &v);
+	return (uint32_t)v;
+}
+
+struct ipv6_row {
+	uint32_t peer_id;
+	char hostname[MAX_HOSTNAME];
+	char inst_id[64];
+	char ipv4[64];
+	char pub6[64];
+	char prefix[64];
+};
+
+struct lease_row {
+	uint32_t peer_id;
+	char inst_id[64];
+	char addr[64];
+	char valid_until[32];
+	int reused;
+};
+
+static int ipv6_row_cmp(const void *p1, const void *p2)
+{
+	const struct ipv6_row *a = p1, *b = p2;
+	int an = a->peer_id != ipv6_local_id;
+	int bn = b->peer_id != ipv6_local_id;
+
+	if (an != bn)
+		return an - bn;
+	if (a->peer_id != b->peer_id)
+		return a->peer_id < b->peer_id ? -1 : 1;
+	return strcmp(a->inst_id, b->inst_id);
+}
+
+static int lease_row_cmp(const void *p1, const void *p2)
+{
+	const struct lease_row *a = p1, *b = p2;
+	int c;
+
+	if (a->peer_id != b->peer_id)
+		return a->peer_id < b->peer_id ? -1 : 1;
+	c = strcmp(a->inst_id, b->inst_id);
+	if (c)
+		return c;
+	return strcmp(a->addr, b->addr);
+}
+
+static void ipv6_row_push(struct ipv6_row **rows, int *n, int *cap,
+			  const struct ipv6_row *r)
+{
+	if (*n >= *cap) {
+		int nc = *cap ? *cap * 2 : 8;
+		struct ipv6_row *p = realloc(*rows, (size_t)nc * sizeof(*p));
+
+		if (!p)
+			return;
+		*rows = p;
+		*cap = nc;
+	}
+	(*rows)[(*n)++] = *r;
+}
+
+static void lease_row_push(struct lease_row **rows, int *n, int *cap,
+			   const struct lease_row *r)
+{
+	if (*n >= *cap) {
+		int nc = *cap ? *cap * 2 : 4;
+		struct lease_row *p = realloc(*rows, (size_t)nc * sizeof(*p));
+
+		if (!p)
+			return;
+		*rows = p;
+		*cap = nc;
+	}
+	(*rows)[(*n)++] = *r;
+}
+
+static int run_peer_ipv6(struct et_cli_ctx *ctx)
+{
+	struct et_cli_fanout f;
+	int rc = 0;
+
+	if (et_cli_fanout_begin(ctx, &f))
+		return 1;
+	for (f.index = 0; f.index < f.nt; f.index++) {
+		et_pb node, routes, prov;
+		struct ipv6_row *rows = NULL;
+		int nrows = 0, cap = 0;
+		struct lease_row *leases = NULL;
+		int nleases = 0, lcap = 0;
+		char provider_prefix[64] = "";
+		int have_provider = 0;
+
+		ctx->target = &f.tg[f.index];
+		et_pb_init(&node);
+		et_pb_init(&routes);
+		et_pb_init(&prov);
+		if (et_cli_call_instance(ctx, "PeerManageRpc", 7, &node) ||
+		    et_cli_call_instance(ctx, "PeerManageRpc", 3, &routes) ||
+		    et_cli_call_instance(ctx, "PeerManageRpc", 2, &prov)) {
+			fprintf(stderr,
+				"easytier-cli: failed to get peer ipv6 info\n");
+			et_pb_free(&node);
+			et_pb_free(&routes);
+			et_pb_free(&prov);
+			rc = 1;
+			break;
+		}
+		/* 本机行 */
+		{
+			const uint8_t *ni = NULL, *q = NULL;
+			size_t nil = 0, ql = 0;
+			struct ipv6_row r;
+
+			memset(&r, 0, sizeof(r));
+			if (et_pb_find(node.p, node.len, 1, 2, NULL, &ni, &nil)) {
+				r.peer_id = pb_get_u32(ni, nil, 1);
+				ipv6_local_id = r.peer_id;
+				(void)et_pb_get_str(ni, nil, 4, r.hostname,
+						    sizeof(r.hostname));
+				(void)et_pb_get_str(ni, nil, 6, r.inst_id,
+						    sizeof(r.inst_id));
+				(void)et_pb_get_str(ni, nil, 2, r.ipv4,
+						    sizeof(r.ipv4));
+				if (et_pb_find(ni, nil, 12, 2, NULL, &q, &ql))
+					fmt_ipv6inet_or_dash(q, ql, r.pub6,
+							     sizeof(r.pub6));
+				else
+					snprintf(r.pub6, sizeof(r.pub6), "-");
+				if (et_pb_find(ni, nil, 13, 2, NULL, &q, &ql))
+					fmt_ipv6inet_or_dash(q, ql, r.prefix,
+							     sizeof(r.prefix));
+				else
+					snprintf(r.prefix, sizeof(r.prefix),
+						 "-");
+				ipv6_row_push(&rows, &nrows, &cap, &r);
+			}
+		}
+		/* 路由行 */
+		{
+			et_pb_rd rd;
+			unsigned fld, w;
+			uint64_t v;
+			const uint8_t *b = NULL;
+			size_t l = 0;
+
+			et_pb_rd_init(&rd, routes.p, routes.len);
+			while (et_pb_next(&rd, &fld, &w, &v, &b, &l) > 0) {
+				struct ipv6_row r;
+				const uint8_t *ia = NULL, *q = NULL;
+				size_t ial = 0, ql = 0;
+
+				if (fld != 1 || w != 2)
+					continue;
+				memset(&r, 0, sizeof(r));
+				r.peer_id = pb_get_u32(b, l, 1);
+				(void)et_pb_get_str(b, l, 6, r.hostname,
+						    sizeof(r.hostname));
+				(void)et_pb_get_str(b, l, 8, r.inst_id,
+						    sizeof(r.inst_id));
+				if (et_pb_find(b, l, 2, 2, NULL, &ia, &ial))
+					et_fmt_ipv4inet(ia, ial, r.ipv4,
+							sizeof(r.ipv4));
+				else
+					snprintf(r.ipv4, sizeof(r.ipv4), "-");
+				if (et_pb_find(b, l, 16, 2, NULL, &q, &ql))
+					fmt_ipv6inet_or_dash(q, ql, r.pub6,
+							     sizeof(r.pub6));
+				else
+					snprintf(r.pub6, sizeof(r.pub6), "-");
+				if (et_pb_find(b, l, 17, 2, NULL, &q, &ql))
+					fmt_ipv6inet_or_dash(q, ql, r.prefix,
+							     sizeof(r.prefix));
+				else
+					snprintf(r.prefix, sizeof(r.prefix),
+						 "-");
+				ipv6_row_push(&rows, &nrows, &cap, &r);
+			}
+		}
+		/* 本机作为 provider 的租约 */
+		{
+			const uint8_t *pfx = NULL;
+			size_t pfxl = 0;
+
+			if (et_pb_find(prov.p, prov.len, 1, 2, NULL, &pfx,
+				       &pfxl)) {
+				fmt_ipv6inet_or_dash(pfx, pfxl, provider_prefix,
+						     sizeof(provider_prefix));
+				have_provider =
+					strcmp(provider_prefix, "-") != 0;
+			}
+			{
+				et_pb_rd rd;
+				unsigned fld, w;
+				uint64_t v;
+				const uint8_t *b = NULL;
+				size_t l = 0;
+
+				et_pb_rd_init(&rd, prov.p, prov.len);
+				while (et_pb_next(&rd, &fld, &w, &v, &b, &l) > 0) {
+					struct lease_row lr;
+					const uint8_t *la = NULL;
+					size_t lal = 0;
+					uint64_t ts = 0, reused = 0;
+
+					if (fld != 2 || w != 2)
+						continue;
+					memset(&lr, 0, sizeof(lr));
+					lr.peer_id = pb_get_u32(b, l, 1);
+					(void)et_pb_get_str(b, l, 2,
+							    lr.inst_id,
+							    sizeof(lr.inst_id));
+					if (et_pb_find(b, l, 3, 2, NULL, &la,
+						       &lal))
+						fmt_ipv6inet_or_dash(
+							la, lal, lr.addr,
+							sizeof(lr.addr));
+					else
+						snprintf(lr.addr,
+							 sizeof(lr.addr), "-");
+					(void)et_pb_get_u64(b, l, 4, &ts);
+					fmt_local_time_str(ts, lr.valid_until,
+							   sizeof(lr.valid_until));
+					(void)et_pb_get_u64(b, l, 5, &reused);
+					lr.reused = reused != 0;
+					lease_row_push(&leases, &nleases,
+						       &lcap, &lr);
+				}
+			}
+		}
+		if (nrows > 1)
+			qsort(rows, (size_t)nrows, sizeof(*rows), ipv6_row_cmp);
+		if (nleases > 1)
+			qsort(leases, (size_t)nleases, sizeof(*leases),
+			      lease_row_cmp);
+		et_cli_fanout_header(ctx, &f);
+		if (f.json) {
+			et_cli_fanout_json_open(&f);
+			et_json_obj_begin(&f.j, f.nt > 1 ? "result" : NULL);
+			et_json_arr_begin(&f.j, "nodes");
+			for (int i = 0; i < nrows; i++) {
+				et_json_obj_begin(&f.j, NULL);
+				et_json_uint(&f.j, "peer_id", rows[i].peer_id);
+				et_json_str(&f.j, "hostname", rows[i].hostname);
+				et_json_str(&f.j, "inst_id", rows[i].inst_id);
+				et_json_str(&f.j, "ipv4", rows[i].ipv4);
+				et_json_str(&f.j, "public_ipv6_addr",
+					    rows[i].pub6);
+				et_json_str(&f.j, "provider_prefix",
+					    rows[i].prefix);
+				et_json_obj_end(&f.j);
+			}
+			et_json_arr_end(&f.j);
+			if (have_provider) {
+				et_json_obj_begin(&f.j, "local_provider");
+				et_json_str(&f.j, "provider_prefix",
+					    provider_prefix);
+				et_json_arr_begin(&f.j, "leases");
+				for (int i = 0; i < nleases; i++) {
+					et_json_obj_begin(&f.j, NULL);
+					et_json_uint(&f.j, "peer_id",
+						     leases[i].peer_id);
+					et_json_str(&f.j, "inst_id",
+						    leases[i].inst_id);
+					et_json_str(&f.j, "leased_addr",
+						    leases[i].addr);
+					et_json_str(&f.j, "valid_until",
+						    leases[i].valid_until);
+					et_json_bool(&f.j, "reused",
+						     leases[i].reused);
+					et_json_obj_end(&f.j);
+				}
+				et_json_arr_end(&f.j);
+				et_json_obj_end(&f.j);
+			} else {
+				et_json_null(&f.j, "local_provider");
+			}
+			et_json_obj_end(&f.j);
+			et_cli_fanout_json_close(&f);
+		} else {
+			static const char *hdr[] = {
+				"peer_id", "hostname", "inst_id", "ipv4",
+				"public_ipv6_addr", "provider_prefix"
+			};
+			et_table t;
+
+			et_table_init(&t, 6, hdr);
+			for (int i = 0; i < nrows; i++) {
+				char id[16];
+				const char *cells[6];
+
+				snprintf(id, sizeof(id), "%u", rows[i].peer_id);
+				cells[0] = id;
+				cells[1] = rows[i].hostname;
+				cells[2] = rows[i].inst_id;
+				cells[3] = rows[i].ipv4;
+				cells[4] = rows[i].pub6;
+				cells[5] = rows[i].prefix;
+				et_table_add_row(&t, cells);
+			}
+			(void)et_table_render(&t, &ctx->opts, &ctx->out);
+			et_table_free(&t);
+			if (have_provider) {
+				et_cli_puts(ctx, "\n");
+				et_cli_printf(ctx,
+					      "Local provider prefix: %s\n",
+					      provider_prefix);
+				if (!nleases) {
+					et_cli_puts(
+						ctx,
+						"No active provider leases\n");
+				} else {
+					static const char *hdr2[] = {
+						"peer_id", "inst_id",
+						"leased_addr", "valid_until",
+						"reused"
+					};
+					et_table t2;
+
+					et_table_init(&t2, 5, hdr2);
+					for (int i = 0; i < nleases; i++) {
+						char id[16];
+						const char *c2[5];
+
+						snprintf(id, sizeof(id), "%u",
+							 leases[i].peer_id);
+						c2[0] = id;
+						c2[1] = leases[i].inst_id;
+						c2[2] = leases[i].addr;
+						c2[3] = leases[i].valid_until;
+						c2[4] = leases[i].reused
+								? "true"
+								: "false";
+						et_table_add_row(&t2, c2);
+					}
+					(void)et_table_render(&t2,
+							      &ctx->opts,
+							      &ctx->out);
+					et_table_free(&t2);
+				}
+			}
+		}
+		free(rows);
+		free(leases);
+		et_pb_free(&node);
+		et_pb_free(&routes);
+		et_pb_free(&prov);
+	}
+	et_cli_fanout_end(ctx, &f);
+	return rc;
+}
+
+static const char *trusted_source_name(uint64_t v)
+{
+	static const char *names[] = {
+		"TRUSTED_KEY_SOURCE_PB_UNSPECIFIED",
+		"TRUSTED_KEY_SOURCE_PB_OSPF_NODE",
+		"TRUSTED_KEY_SOURCE_PB_OSPF_CREDENTIAL"
+	};
+
+	return v < 3 ? names[v] : names[0];
+}
+
+static void tunnel_remote_addr(const uint8_t *conn, size_t n, char *out,
+			       size_t cap)
+{
+	const uint8_t *ti = NULL, *url = NULL;
+	size_t til = 0, urll = 0;
+
+	out[0] = 0;
+	if (!et_pb_find(conn, n, 5, 2, NULL, &ti, &til))
+		return;
+	if (!et_pb_find(ti, til, 4, 2, NULL, &url, &urll) &&
+	    !et_pb_find(ti, til, 3, 2, NULL, &url, &urll))
+		return;
+	(void)et_pb_get_str(url, urll, 1, out, cap);
+}
+
+/* peer list-foreign：PeerManageRpc/5，map<string, ForeignNetworkEntryPb> */
+static int run_peer_list_foreign(struct et_cli_ctx *ctx, int trusted_keys)
+{
+	struct et_cli_fanout f;
+	int rc = 0;
+
+	if (et_cli_fanout_begin(ctx, &f))
+		return 1;
+	for (f.index = 0; f.index < f.nt; f.index++) {
+		et_pb req, resp;
+
+		ctx->target = &f.tg[f.index];
+		et_pb_init(&req);
+		et_pb_init(&resp);
+		(void)et_cli_req_instance(ctx, &req);
+		if (trusted_keys)
+			(void)et_pb_uint(&req, 2, 1);
+		if (et_cli_call(ctx, "PeerManageRpc", 5, &req, &resp)) {
+			fprintf(stderr,
+				"easytier-cli: failed to list foreign networks\n");
+			et_pb_free(&req);
+			et_pb_free(&resp);
+			rc = 1;
+			break;
+		}
+		et_cli_fanout_header(ctx, &f);
+		et_cli_fanout_json_open(&f);
+		if (f.json)
+			et_json_obj_begin(&f.j, f.nt > 1 ? "result" : NULL);
+		{
+			et_pb_rd rd;
+			unsigned fld, w;
+			uint64_t v;
+			const uint8_t *b = NULL;
+			size_t l = 0;
+			int idx = 0;
+
+			et_pb_rd_init(&rd, resp.p, resp.len);
+			while (et_pb_next(&rd, &fld, &w, &v, &b, &l) > 0) {
+				const uint8_t *key = NULL, *val = NULL;
+				size_t keyl = 0, vall = 0;
+				char name[128] = "";
+				int nkeys = 0;
+				et_pb_rd r2;
+				unsigned f2, w2;
+				uint64_t v2;
+				const uint8_t *p2 = NULL;
+				size_t l2 = 0;
+
+				if (fld != 1 || w != 2)
+					continue;
+				if (!et_pb_find(b, l, 1, 2, NULL, &key, &keyl))
+					continue;
+				(void)et_pb_find(b, l, 2, 2, NULL, &val, &vall);
+				if (keyl >= sizeof(name))
+					keyl = sizeof(name) - 1;
+				memcpy(name, key, keyl);
+				name[keyl] = 0;
+				idx++;
+				/* 先数一下 peer/key 数量，JSON 里好开数组 */
+				et_pb_rd_init(&r2, val, vall);
+				while (et_pb_next(&r2, &f2, &w2, &v2, &p2,
+						  &l2) > 0) {
+					if (f2 == 4 && w2 == 2)
+						nkeys++;
+				}
+				if (f.json) {
+					et_json_arr_begin(&f.j, name);
+				} else {
+					et_cli_printf(ctx,
+						      "%d Network Name: %s\n",
+						      idx, name);
+				}
+				et_pb_rd_init(&r2, val, vall);
+				while (et_pb_next(&r2, &f2, &w2, &v2, &p2,
+						  &l2) > 0) {
+					uint64_t pid = 0;
+					int nconns = 0;
+					et_buf conns;
+
+					if (f2 != 1 || w2 != 2)
+						continue;
+					(void)et_pb_get_u64(p2, l2, 1, &pid);
+					et_buf_init(&conns);
+					{
+						et_pb_rd r3;
+						unsigned f3, w3;
+						uint64_t v3;
+						const uint8_t *p3 = NULL;
+						size_t l3 = 0;
+
+						et_pb_rd_init(&r3, p2, l2);
+						while (et_pb_next(&r3, &f3, &w3,
+								  &v3, &p3,
+								  &l3) > 0) {
+							char addr[256] = "";
+							uint64_t rx = 0, tx = 0,
+								 lat = 0;
+							et_pb_rd r4;
+							unsigned f4, w4;
+							uint64_t v4;
+							const uint8_t *p4 = NULL;
+							size_t l4 = 0;
+
+							if (f3 != 2 || w3 != 2)
+								continue;
+							tunnel_remote_addr(
+								p3, l3, addr,
+								sizeof(addr));
+							et_pb_rd_init(&r4, p3, l3);
+							while (et_pb_next(
+								       &r4, &f4,
+								       &w4, &v4,
+								       &p4,
+								       &l4) >
+							       0) {
+								if (f4 != 6 ||
+								    w4 != 2)
+									continue;
+								(void)et_pb_get_u64(
+									p4, l4, 1,
+									&rx);
+								(void)et_pb_get_u64(
+									p4, l4, 2,
+									&tx);
+								(void)et_pb_get_u64(
+									p4, l4, 5,
+									&lat);
+							}
+							et_buf_addf(
+								&conns,
+								"%sremote_addr: %s, rx_bytes: %llu, tx_bytes: %llu, latency_us: %llu",
+								nconns ? "; "
+								       : "",
+								addr,
+								(unsigned long long)
+									rx,
+								(unsigned long long)
+									tx,
+								(unsigned long long)
+									lat);
+							nconns++;
+						}
+					}
+					if (f.json) {
+						et_json_obj_begin(&f.j, NULL);
+						et_json_uint(&f.j, "peer_id",
+							     pid);
+						et_json_str(&f.j, "conns",
+							    conns.p ? conns.p
+								    : "");
+						et_json_obj_end(&f.j);
+					} else {
+						et_cli_printf(
+							ctx,
+							"  peer_id: %llu, peer_conn_count: %d, conns: [ %s ]\n",
+							(unsigned long long)pid,
+							nconns,
+							conns.p ? conns.p : "");
+					}
+					et_buf_free(&conns);
+				}
+				if (trusted_keys && nkeys) {
+					if (!f.json)
+						et_cli_puts(ctx,
+							    "  trusted_keys:\n");
+					et_pb_rd_init(&r2, val, vall);
+					while (et_pb_next(&r2, &f2, &w2, &v2,
+							  &p2, &l2) > 0) {
+						const uint8_t *pk = NULL;
+						size_t pkl = 0;
+						uint64_t src = 0, exp = 0;
+						int have_exp;
+						char b64[512] = "";
+						char expbuf[32] = "-";
+
+						if (f2 != 4 || w2 != 2)
+							continue;
+						if (et_pb_find(p2, l2, 1, 2,
+							       NULL, &pk,
+							       &pkl))
+							et_b64_encode(
+								pk, pkl, b64,
+								sizeof(b64));
+						(void)et_pb_get_u64(p2, l2, 2,
+								    &src);
+						have_exp = !et_pb_get_u64(
+							p2, l2, 3, &exp);
+						if (have_exp)
+							snprintf(
+								expbuf,
+								sizeof(expbuf),
+								"%lld",
+								(long long)(
+									int64_t)
+									exp);
+						if (!f.json)
+							et_cli_printf(
+								ctx,
+								"    source: %s, expiry_unix: %s, pubkey: %s\n",
+								trusted_source_name(
+									src),
+								expbuf, b64);
+					}
+				}
+				if (f.json)
+					et_json_arr_end(&f.j);
+			}
+		}
+		if (f.json)
+			et_json_obj_end(&f.j);
+		et_cli_fanout_json_close(&f);
+		et_pb_free(&req);
+		et_pb_free(&resp);
+	}
+	et_cli_fanout_end(ctx, &f);
+	return rc;
+}
+
+/* peer list-global-foreign：PeerManageRpc/6，map<uint32, ForeignNetworks> */
+static int run_peer_list_global_foreign(struct et_cli_ctx *ctx)
+{
+	struct et_cli_fanout f;
+	int rc = 0;
+
+	if (et_cli_fanout_begin(ctx, &f))
+		return 1;
+	for (f.index = 0; f.index < f.nt; f.index++) {
+		et_pb req, resp;
+
+		ctx->target = &f.tg[f.index];
+		et_pb_init(&req);
+		et_pb_init(&resp);
+		(void)et_cli_req_instance(ctx, &req);
+		if (et_cli_call(ctx, "PeerManageRpc", 6, &req, &resp)) {
+			fprintf(stderr,
+				"easytier-cli: failed to list global foreign networks\n");
+			et_pb_free(&req);
+			et_pb_free(&resp);
+			rc = 1;
+			break;
+		}
+		et_cli_fanout_header(ctx, &f);
+		et_cli_fanout_json_open(&f);
+		if (f.json)
+			et_json_obj_begin(&f.j, f.nt > 1 ? "result" : NULL);
+		{
+			et_pb_rd rd;
+			unsigned fld, w;
+			uint64_t v;
+			const uint8_t *b = NULL;
+			size_t l = 0;
+
+			et_pb_rd_init(&rd, resp.p, resp.len);
+			while (et_pb_next(&rd, &fld, &w, &v, &b, &l) > 0) {
+				const uint8_t *val = NULL;
+				size_t vall = 0;
+				uint64_t peer_id = 0;
+				char keybuf[32];
+
+				if (fld != 1 || w != 2)
+					continue;
+				/* map<uint32, V>：key 是 varint（wire 0） */
+				(void)et_pb_get_u64(b, l, 1, &peer_id);
+				if (!et_pb_find(b, l, 2, 2, NULL, &val, &vall))
+					continue;
+				snprintf(keybuf, sizeof(keybuf), "%u",
+					 (unsigned)peer_id);
+				if (f.json) {
+					et_json_arr_begin(&f.j, keybuf);
+				} else {
+					et_cli_printf(ctx, "Peer ID: %u\n",
+						      (unsigned)peer_id);
+				}
+				{
+					et_pb_rd r2;
+					unsigned f2, w2;
+					uint64_t v2;
+					const uint8_t *p2 = NULL;
+					size_t l2 = 0;
+
+					et_pb_rd_init(&r2, val, vall);
+					while (et_pb_next(&r2, &f2, &w2, &v2,
+							  &p2, &l2) > 0) {
+						char netname[128] = "",
+						     updated[64] = "";
+						uint64_t version = 0;
+						et_buf ids;
+						et_pb_rd r3;
+						unsigned f3, w3;
+						uint64_t v3;
+						const uint8_t *p3 = NULL;
+						size_t l3 = 0;
+
+						if (f2 != 1 || w2 != 2)
+							continue;
+						(void)et_pb_get_str(
+							p2, l2, 1, netname,
+							sizeof(netname));
+						(void)et_pb_get_str(
+							p2, l2, 3, updated,
+							sizeof(updated));
+						version = pb_get_u32(p2, l2, 4);
+						et_buf_init(&ids);
+						et_pb_rd_init(&r3, p2, l2);
+						while (et_pb_next(&r3, &f3, &w3,
+								  &v3, &p3, &l3) > 0)
+							if (f3 == 2 && w3 == 0)
+								et_buf_addf(
+									&ids,
+									"%s%u",
+									ids.len
+										? ", "
+										: "",
+									(unsigned)
+										v3);
+						if (f.json) {
+							et_json_obj_begin(&f.j,
+									  NULL);
+							et_json_str(
+								&f.j,
+								"network_name",
+								netname);
+							et_json_str(
+								&f.j,
+								"last_updated",
+								updated);
+							et_json_uint(
+								&f.j, "version",
+								version);
+							et_json_str(
+								&f.j, "peer_ids",
+								ids.p ? ids.p
+								      : "");
+							et_json_obj_end(&f.j);
+						} else {
+							et_cli_printf(
+								ctx,
+								"  Network Name: %s, Last Updated: %s, Version: %u, PeerIds: [%s]\n",
+								netname, updated,
+								(unsigned)version,
+								ids.p ? ids.p
+								      : "");
+						}
+						et_buf_free(&ids);
+					}
+				}
+				if (f.json)
+					et_json_arr_end(&f.j);
+			}
+		}
+		if (f.json)
+			et_json_obj_end(&f.j);
+		et_cli_fanout_json_close(&f);
+		et_pb_free(&req);
+		et_pb_free(&resp);
+	}
+	et_cli_fanout_end(ctx, &f);
+	return rc;
+}
+
 int et_cli_peer(struct et_cli_ctx *ctx, int argc, char **argv)
 {
 	if (argc > 0) {
 		if (!strcmp(argv[0], "list") || !strcmp(argv[0], "ls"))
 			return run_peer_list(ctx);
-		if (!strcmp(argv[0], "list-foreign") ||
-		    !strcmp(argv[0], "list-global-foreign")) {
-			fprintf(stderr,
-				"easytier-cli: %s is not supported by this build\n",
-				argv[0]);
-			return 1;
+		if (!strcmp(argv[0], "ipv6"))
+			return run_peer_ipv6(ctx);
+		if (!strcmp(argv[0], "list-foreign")) {
+			int trusted = 0;
+
+			for (int i = 1; i < argc; i++)
+				if (!strcmp(argv[i], "--trusted-keys") ||
+				    !strcmp(argv[i], "--include-trusted-keys"))
+					trusted = 1;
+			return run_peer_list_foreign(ctx, trusted);
 		}
+		if (!strcmp(argv[0], "list-global-foreign"))
+			return run_peer_list_global_foreign(ctx);
 		return ET_ENOENT;
 	}
 	return run_peer_list(ctx);
@@ -1256,10 +2061,20 @@ static int run_route_dump(struct et_cli_ctx *ctx)
 
 	et_pb_init(&resp);
 	if (et_cli_call_instance(ctx, "PeerManageRpc", 4, &resp) == 0) {
-		char out[8192];
+		/* 上游直接 println 整段 Debug 文本（实测 ~50KB，不能用定长缓冲） */
+		const uint8_t *s = NULL;
+		size_t sl = 0;
+		uint64_t fld = 0, w = 0, v = 0;
+		et_pb_rd rd;
 
-		(void)et_pb_get_str(resp.p, resp.len, 1, out, sizeof(out));
-		et_cli_puts(ctx, out);
+		et_cli_puts(ctx, "response: ");
+		et_pb_rd_init(&rd, resp.p, resp.len);
+		while (et_pb_next(&rd, (unsigned *)&fld, (unsigned *)&w, &v, &s,
+				  &sl) > 0)
+			if (fld == 1 && w == 2) {
+				et_buf_addn(&ctx->out, (const char *)s, sl);
+				break;
+			}
 		if (ctx->out.len && ctx->out.p[ctx->out.len - 1] != '\n')
 			et_cli_puts(ctx, "\n");
 		rc = 0;
@@ -1282,6 +2097,367 @@ int et_cli_route(struct et_cli_ctx *ctx, int argc, char **argv)
 	return run_route_list(ctx);
 }
 
+/* ===================== node JSON（proto3 JSON / pbjson 语义） =====================
+ * 上游 -o json node 输出 pbjson 的 proto3 JSON：
+ *   - 默认值（空串/空数组/0/false/枚举 0）不输出；
+ *   - 枚举输出变体名（"PortRestricted"），int64/uint64 输出字符串；
+ *   - 消息字段存在就输出对象（内部再按默认值裁剪）。
+ */
+
+static void json_ipv4addr_obj(et_json *j, const char *key, const uint8_t *b,
+			      size_t n)
+{
+	uint64_t v = 0;
+
+	if (b && n)
+		(void)et_pb_get_u64(b, n, 1, &v);
+	et_json_obj_begin(j, key);
+	if (v)
+		et_json_uint(j, "addr", v);
+	et_json_obj_end(j);
+}
+
+static void json_ipv6addr_obj(et_json *j, const char *key, const uint8_t *b,
+			      size_t n)
+{
+	uint64_t part[4] = { 0, 0, 0, 0 };
+	int any = 0;
+
+	for (unsigned i = 0; i < 4; i++) {
+		if (b && n)
+			(void)et_pb_get_u64(b, n, i + 1, &part[i]);
+		if (part[i])
+			any = 1;
+	}
+	et_json_obj_begin(j, key);
+	if (any)
+		for (unsigned i = 0; i < 4; i++) {
+			char k[12];
+
+			if (!part[i])
+				continue;
+			snprintf(k, sizeof(k), "part%u", i + 1);
+			et_json_uint(j, k, part[i]);
+		}
+	et_json_obj_end(j);
+}
+
+static void json_ipv6inet_obj(et_json *j, const char *key, const uint8_t *b,
+			      size_t n)
+{
+	uint64_t plen = 0;
+	const uint8_t *addr = NULL;
+	size_t addrlen = 0;
+
+	et_json_obj_begin(j, key);
+	if (b && n) {
+		(void)et_pb_get_u64(b, n, 2, &plen);
+		if (et_pb_find(b, n, 1, 2, NULL, &addr, &addrlen))
+			json_ipv6addr_obj(j, "address", addr, addrlen);
+	}
+	if (plen)
+		et_json_uint(j, "network_length", plen);
+	et_json_obj_end(j);
+}
+
+static void node_json_emit(et_json *j, const struct node_view *nv)
+{
+	const uint8_t *b = nv->raw.p;
+	size_t n = nv->raw.len;
+	et_pb_rd r;
+	unsigned f, w;
+	uint64_t v;
+	const uint8_t *p = NULL;
+	size_t l = 0;
+	const uint8_t *stun = NULL, *ff = NULL, *ipl = NULL, *v6 = NULL,
+		      *pfx = NULL;
+	size_t stunlen = 0, fflen = 0, ipllen = 0, v6len = 0, pfxlen = 0;
+	char ipv4_addr[64] = "", hostname[128] = "", inst_id[64] = "",
+	     config[4096] = "", version[64] = "";
+	uint64_t peer_id = 0;
+	int n_proxy = 0, n_listeners = 0;
+
+	et_pb_rd_init(&r, b, n);
+	while (et_pb_next(&r, &f, &w, &v, &p, &l) > 0) {
+		if (w != 2)
+			continue;
+		switch (f) {
+		case 3:
+			n_proxy++;
+			break;
+		case 5:
+			stun = p;
+			stunlen = l;
+			break;
+		case 7:
+			n_listeners++;
+			break;
+		case 10:
+			ff = p;
+			fflen = l;
+			break;
+		case 11:
+			ipl = p;
+			ipllen = l;
+			break;
+		case 12:
+			v6 = p;
+			v6len = l;
+			break;
+		case 13:
+			pfx = p;
+			pfxlen = l;
+			break;
+		default:
+			break;
+		}
+	}
+	(void)et_pb_get_u64(b, n, 1, &peer_id);
+	(void)et_pb_get_str(b, n, 2, ipv4_addr, sizeof(ipv4_addr));
+	(void)et_pb_get_str(b, n, 4, hostname, sizeof(hostname));
+	(void)et_pb_get_str(b, n, 6, inst_id, sizeof(inst_id));
+	(void)et_pb_get_str(b, n, 8, config, sizeof(config));
+	(void)et_pb_get_str(b, n, 9, version, sizeof(version));
+
+	et_json_obj_begin(j, NULL);
+	if (peer_id)
+		et_json_uint(j, "peer_id", peer_id);
+	if (ipv4_addr[0])
+		et_json_str(j, "ipv4_addr", ipv4_addr);
+	if (n_proxy) {
+		et_json_arr_begin(j, "proxy_cidrs");
+		{
+			et_pb_rd r2;
+			unsigned f2, w2;
+			uint64_t v2;
+			const uint8_t *p2 = NULL;
+			size_t l2 = 0;
+
+			et_pb_rd_init(&r2, b, n);
+			while (et_pb_next(&r2, &f2, &w2, &v2, &p2, &l2) > 0) {
+				char s[512];
+
+				if (f2 != 3 || w2 != 2 || !l2 ||
+				    l2 >= sizeof(s))
+					continue;
+				memcpy(s, p2, l2);
+				s[l2] = 0;
+				et_json_str(j, NULL, s);
+			}
+		}
+		et_json_arr_end(j);
+	}
+	if (hostname[0])
+		et_json_str(j, "hostname", hostname);
+	if (stun) {
+		uint64_t udp = 0, tcp = 0, t = 0, minp = 0, maxp = 0;
+		int n_ip = 0;
+
+		(void)et_pb_get_u64(stun, stunlen, 1, &udp);
+		(void)et_pb_get_u64(stun, stunlen, 2, &tcp);
+		(void)et_pb_get_u64(stun, stunlen, 3, &t);
+		(void)et_pb_get_u64(stun, stunlen, 5, &minp);
+		(void)et_pb_get_u64(stun, stunlen, 6, &maxp);
+		{
+			et_pb_rd r3;
+			unsigned f3, w3;
+			uint64_t v3;
+			const uint8_t *p3 = NULL;
+			size_t l3 = 0;
+
+			et_pb_rd_init(&r3, stun, stunlen);
+			while (et_pb_next(&r3, &f3, &w3, &v3, &p3, &l3) > 0)
+				if (f3 == 4 && w3 == 2 && l3)
+					n_ip++;
+		}
+		et_json_obj_begin(j, "stun_info");
+		if (udp)
+			et_json_str(j, "udp_nat_type", et_nat_name(udp));
+		if (tcp)
+			et_json_str(j, "tcp_nat_type", et_nat_name(tcp));
+		if (t) {
+			char buf[32];
+
+			snprintf(buf, sizeof(buf), "%lld",
+				 (long long)(int64_t)t);
+			et_json_str(j, "last_update_time", buf);
+		}
+		if (n_ip) {
+			et_json_arr_begin(j, "public_ip");
+			{
+				et_pb_rd r3;
+				unsigned f3, w3;
+				uint64_t v3;
+				const uint8_t *p3 = NULL;
+				size_t l3 = 0;
+
+				et_pb_rd_init(&r3, stun, stunlen);
+				while (et_pb_next(&r3, &f3, &w3, &v3, &p3,
+						  &l3) > 0) {
+					char s[128];
+
+					if (f3 != 4 || w3 != 2 || !l3 ||
+					    l3 >= sizeof(s))
+						continue;
+					memcpy(s, p3, l3);
+					s[l3] = 0;
+					et_json_str(j, NULL, s);
+				}
+			}
+			et_json_arr_end(j);
+		}
+		if (minp)
+			et_json_uint(j, "min_port", minp);
+		if (maxp)
+			et_json_uint(j, "max_port", maxp);
+		et_json_obj_end(j);
+	}
+	if (inst_id[0])
+		et_json_str(j, "inst_id", inst_id);
+	if (n_listeners) {
+		et_json_arr_begin(j, "listeners");
+		{
+			et_pb_rd r3;
+			unsigned f3, w3;
+			uint64_t v3;
+			const uint8_t *p3 = NULL;
+			size_t l3 = 0;
+
+			et_pb_rd_init(&r3, b, n);
+			while (et_pb_next(&r3, &f3, &w3, &v3, &p3, &l3) > 0) {
+				char s[256];
+
+				if (f3 != 7 || w3 != 2 || !l3 ||
+				    l3 >= sizeof(s))
+					continue;
+				memcpy(s, p3, l3);
+				s[l3] = 0;
+				et_json_str(j, NULL, s);
+			}
+		}
+		et_json_arr_end(j);
+	}
+	if (config[0])
+		et_json_str(j, "config", config);
+	if (version[0])
+		et_json_str(j, "version", version);
+	if (ff) {
+		static const char *names[] = {
+			"is_public_server", "avoid_relay_data", "kcp_input",
+			"no_relay_kcp", "support_conn_list_sync", "quic_input",
+			"no_relay_quic", "is_credential_peer", "need_p2p",
+			"disable_p2p", "ipv6_public_addr_provider"
+		};
+
+		et_json_obj_begin(j, "feature_flag");
+		for (unsigned i = 0; i < 11; i++) {
+			uint64_t x = 0;
+
+			(void)et_pb_get_u64(ff, fflen, i + 1, &x);
+			if (x)
+				et_json_bool(j, names[i], 1);
+		}
+		et_json_obj_end(j);
+	}
+	if (ipl) {
+		const uint8_t *p4 = NULL;
+		size_t l4 = 0;
+		int n4 = 0, n6 = 0, n_ls = 0, pub6 = 0;
+		et_pb_rd r4;
+		unsigned f4, w4;
+		uint64_t v4;
+		const uint8_t *q = NULL;
+		size_t ql = 0;
+
+		et_pb_rd_init(&r4, ipl, ipllen);
+		while (et_pb_next(&r4, &f4, &w4, &v4, &q, &ql) > 0) {
+			if (w4 != 2)
+				continue;
+			if (f4 == 2)
+				n4++;
+			else if (f4 == 3)
+				pub6 = 1;
+			else if (f4 == 4)
+				n6++;
+			else if (f4 == 5)
+				n_ls++;
+		}
+		et_json_obj_begin(j, "ip_list");
+		if (et_pb_find(ipl, ipllen, 1, 2, NULL, &p4, &l4))
+			json_ipv4addr_obj(j, "public_ipv4", p4, l4);
+		if (n4) {
+			et_json_arr_begin(j, "interface_ipv4s");
+			{
+				et_pb_rd r5;
+				unsigned f5, w5;
+				uint64_t v5;
+				const uint8_t *p5 = NULL;
+				size_t l5 = 0;
+
+				et_pb_rd_init(&r5, ipl, ipllen);
+				while (et_pb_next(&r5, &f5, &w5, &v5, &p5,
+						  &l5) > 0)
+					if (f5 == 2 && w5 == 2)
+						json_ipv4addr_obj(j, NULL, p5,
+								  l5);
+			}
+			et_json_arr_end(j);
+		}
+		if (pub6 && et_pb_find(ipl, ipllen, 3, 2, NULL, &p4, &l4))
+			json_ipv6addr_obj(j, "public_ipv6", p4, l4);
+		if (n6) {
+			et_json_arr_begin(j, "interface_ipv6s");
+			{
+				et_pb_rd r5;
+				unsigned f5, w5;
+				uint64_t v5;
+				const uint8_t *p5 = NULL;
+				size_t l5 = 0;
+
+				et_pb_rd_init(&r5, ipl, ipllen);
+				while (et_pb_next(&r5, &f5, &w5, &v5, &p5,
+						  &l5) > 0)
+					if (f5 == 4 && w5 == 2)
+						json_ipv6addr_obj(j, NULL, p5,
+								  l5);
+			}
+			et_json_arr_end(j);
+		}
+		if (n_ls) {
+			et_json_arr_begin(j, "listeners");
+			{
+				et_pb_rd r5;
+				unsigned f5, w5;
+				uint64_t v5;
+				const uint8_t *p5 = NULL;
+				size_t l5 = 0;
+
+				et_pb_rd_init(&r5, ipl, ipllen);
+				while (et_pb_next(&r5, &f5, &w5, &v5, &p5,
+						  &l5) > 0) {
+					char url[512] = "";
+
+					if (f5 != 5 || w5 != 2)
+						continue;
+					(void)et_pb_get_str(p5, l5, 1, url,
+							    sizeof(url));
+					et_json_obj_begin(j, NULL);
+					if (url[0])
+						et_json_str(j, "url", url);
+					et_json_obj_end(j);
+				}
+			}
+			et_json_arr_end(j);
+		}
+		et_json_obj_end(j);
+	}
+	if (v6)
+		json_ipv6inet_obj(j, "public_ipv6_addr", v6, v6len);
+	if (pfx)
+		json_ipv6inet_obj(j, "ipv6_public_addr_prefix", pfx, pfxlen);
+	et_json_obj_end(j);
+}
+
 /* ===================== node ===================== */
 
 static int run_node(struct et_cli_ctx *ctx, int want_config)
@@ -1298,6 +2474,7 @@ static int run_node(struct et_cli_ctx *ctx, int want_config)
 		if (fetch_node_view(ctx, &nv)) {
 			fprintf(stderr,
 				"easytier-cli: failed to get node info\n");
+			node_view_free(&nv);
 			rc = 1;
 			break;
 		}
@@ -1309,52 +2486,16 @@ static int run_node(struct et_cli_ctx *ctx, int want_config)
 			if (want_config) {
 				et_json_str(&f.j, NULL, nv.config);
 			} else {
-				et_json_obj_begin(&f.j, NULL);
-				et_json_uint(&f.j, "peer_id", nv.peer_id);
-				et_json_str(&f.j, "ipv4_addr", nv.ipv4_addr);
-				et_json_arr_begin(&f.j, "proxy_cidrs");
-				{
-					/* 拆回数组 */
-					char tmp[512];
-					char *p, *save = NULL;
-
-					snprintf(tmp, sizeof(tmp), "%s",
-						 nv.proxy_join);
-					for (p = strtok_r(tmp, ",", &save); p;
-					     p = strtok_r(NULL, ",", &save)) {
-						char *s = p;
-
-						while (*s == ' ')
-							s++;
-						et_json_str(&f.j, NULL, s);
-					}
-				}
-				et_json_arr_end(&f.j);
-				et_json_str(&f.j, "hostname", nv.hostname);
-				et_json_obj_begin(&f.j, "stun_info");
-				et_json_uint(&f.j, "udp_nat_type", nv.nat);
-				et_json_arr_begin(&f.j, "public_ip");
-				for (int i = 0; i < nv.n_public; i++)
-					et_json_str(&f.j, NULL, nv.public_ip[i]);
-				et_json_arr_end(&f.j);
-				et_json_obj_end(&f.j);
-				et_json_str(&f.j, "inst_id", nv.inst_id);
-				et_json_arr_begin(&f.j, "listeners");
-				for (int i = 0; i < nv.n_listeners; i++)
-					et_json_str(&f.j, NULL, nv.listeners[i]);
-				et_json_arr_end(&f.j);
-				et_json_str(&f.j, "config", nv.config);
-				et_json_str(&f.j, "version", nv.version);
-				et_json_obj_end(&f.j);
+				node_json_emit(&f.j, &nv);
 			}
 			if (f.nt > 1)
 				et_json_arr_end(&f.j);
 			fanout_json_close(&f);
 		} else if (want_config) {
+			/* 上游 println!("{}", config)：config 自带的尾换行之外
+			 * 还会再补一个，所以这里无条件追加换行 */
 			et_cli_puts(ctx, nv.config);
-			if (!nv.config[0] ||
-			    ctx->out.p[ctx->out.len - 1] != '\n')
-				et_cli_puts(ctx, "\n");
+			et_cli_puts(ctx, "\n");
 		} else {
 			/* kv 表：表头行是 Virtual IP，其余逐行 */
 			const char *labels[96];
@@ -1415,6 +2556,7 @@ static int run_node(struct et_cli_ctx *ctx, int want_config)
 			(void)et_table_kv_print(labels, values, n, &ctx->opts,
 						&ctx->out);
 		}
+		node_view_free(&nv);
 	}
 	fanout_end(ctx, &f);
 	return rc;

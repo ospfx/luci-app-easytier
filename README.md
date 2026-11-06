@@ -9,7 +9,7 @@
 OpenWrt LuCI 界面，用于管理 [EasyTier](https://github.com/EasyTier/EasyTier) —— 一个简单、安全、去中心化的内网穿透 VPN 组网方案。
 
 > **当前 `main` 分支是 C 后端重写版。** 进程守护、配置读写、防火墙编排、下载安装、状态采集全部由 C 实现
-> （`/usr/sbin/easytierd`、`/usr/sbin/easytier-cli`），LuCI 侧只保留一层 129 行的极薄转发壳。
+> （`/usr/sbin/easytierd`、`/usr/bin/easytier-cli`），LuCI 侧只保留一层 129 行的极薄转发壳。
 > 旧的 Lua + Shell 实现在分支 [`legacy/lua`](../../tree/legacy/lua)，两者的逐项对照见 [docs/C-PORT.md](docs/C-PORT.md)。
 
 ## UI 预览
@@ -38,7 +38,7 @@ OpenWrt LuCI 界面，用于管理 [EasyTier](https://github.com/EasyTier/EasyTi
 flowchart LR
     B["浏览器<br/>ES5 + XMLHttpRequest"] -->|HTTP| U["uhttpd"]
     U --> L["LuCI Lua1<br/>controller/easytier.lua<br/>129 行：菜单 + 转发"]
-    L -->|"sys.exec:<br/>easytier-cli api &lt;method&gt; k=v..."| C["easytier-cli<br/>/usr/sbin/easytier-cli"]
+    L -->|"sys.exec:<br/>easytier-cli api &lt;method&gt; k=v..."| C["easytier-cli<br/>/usr/bin/easytier-cli"]
     C -->|"同一套 handler<br/>路由表 et_routes[]"| D["easytierd<br/>/usr/sbin/easytierd"]
     D -->|"UCI / sync / kill"| F[("/etc/config/easytier<br/>/etc/easytier/config.toml")]
     D -->|fork + exec| E["easytier-core<br/>（+ easytier-web-embed）"]
@@ -75,7 +75,7 @@ flowchart LR
 
 | 包 | 内容 | 作用 | 依赖 |
 | --- | --- | --- | --- |
-| `easytierd` | `/usr/sbin/easytierd`、`/usr/sbin/easytier-cli` | **C 后端**：进程守护、配置模型、防火墙/接口编排、状态采集、日志、上传下载安装、i18n 字典加载 | `libuci` `libjson-c` |
+| `easytierd` | `/usr/sbin/easytierd`、`/usr/bin/easytier-cli` | **C 后端**：进程守护、配置模型、防火墙/接口编排、状态采集、日志、上传下载安装、i18n 字典加载 | `libuci` `libjson-c` |
 | `luci-app-easytier` | `luasrc/controller/easytier.lua`、6 个 HTM 模板、`/etc/init.d/easytier`（24 行）、UCI 默认配置、rpcd ACL、i18n JSON | **UI 与桥接层**：菜单、页面模板、把请求转发给 `easytier-cli` | `+kmod-tun` `+luci-compat` **`+easytierd`** |
 
 `luci-app-easytier` 强依赖 `easytierd`：少了它界面能打开但所有接口都会失败。包管理器会解析这个依赖，
@@ -219,7 +219,7 @@ opkg install kmod-tun
 `easytierd` 没装或没执行权限：
 
 ```bash
-ls -l /usr/sbin/easytierd /usr/sbin/easytier-cli
+ls -l /usr/sbin/easytierd /usr/bin/easytier-cli
 easytier-cli doctor      # 环境自检：UCI、二进制、架构、外部工具、磁盘、进程
 ```
 

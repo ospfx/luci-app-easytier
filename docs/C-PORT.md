@@ -255,36 +255,81 @@ if (!v || !*v) {
 
 ---
 
+### 4.9 core 命令行参数兼容性（2026-11-06 核对）
+
+拿上游 2.7.0 `easytier-core --help`（91 个选项）和 `src/lib/etd_schema.c`（73 条、67 个
+去重旗标）逐项比对：
+
+- **本实现发射的旗标全部存在**：短选项 `-i/-d/-p/-n/-r/-l/-e/-m/-u/-w` 与上游长选项一一对应；
+  没有拼错或已废弃的旗标。
+- **2.7.0 独有、默认不发射**（只有用户显式配置才出现在 argv）：
+  `--tcp-stun-servers`、`--socket-mark`、`--vpn-portal-private-key`、
+  `--vpn-portal-client`、`--vpn-portal-client-group`、`--credential(-file)`、
+  `--secure-mode`、`--local-private/public-key`、`--ipv6-public-addr-*`。
+  因此跑 2.6.4 内核时默认参数依然合法；但如果用户在表单里填了 2.6.4 不认识的项，
+  core 会拒绝启动（能力门控需要读 core 版本后过滤 argv，属未做的增强）。
+- **未暴露给表单的上游选项（32 个）**，分三类：
+  1. 进程级/启动方式：`--config-file`、`--config-dir`、`--machine-id`、`--check-config`、
+     `--daemon`、`--disable-env-parsing`、`--gen-autocomplete`、`-w/--config-server`；
+  2. 日志文件：`--file-log-level/-dir/-size/-count`（本项目日志由守护进程管）；
+  3. 2.7.0 新特性：`--secure-mode`、`--credential`、`--credential-file`、
+     `--local-private-key`、`--local-public-key`、`--ipv6-public-addr-provider/-auto/-prefix`、
+     `--enable-udp-broadcast-relay`（Windows 专用）、`--vpn-portal-client-group`、
+     `--stun-servers-v6`、`--rpc-portal`（等价 `-r`，已用短选项）。
+  这些是"UI 没暴露"而不是"core 不支持"，需要产品决策后再加表单字段。
+- **VPN 门户写法已跟进 2.7.0**：旧写法 `wg://host:port/CIDR` 在 2.7.0 会被 core 拒绝
+  （core.rs 明确报 legacy 不再支持），本实现改为 `--vpn-portal wg://host:port` +
+  `--vpn-portal-client NAME=CIDR`，并在检测到旧写法时给出告警而不是静默失败。
+
 ## 5. 尚未完成与待验证
 
-如实记录，不做美化。
+如实记录，不做美化。最近一次核对：2026-11-06（含真机对拍）。
 
-### 未实现
+### 仍未实现（3 项）
 
-1. **ubus 对象**。`src/include/etd_api.h` 的注释把 `ubus call easytier <method>` 列为调用路径之一，
-   但 `src/` 里没有任何 `ubus_*` / `uloop_*` 调用（`grep -rn ubus src/` 只命中注释与 Makefile 的 `LIBS`）。
-   当前所有调用都走 `easytierctl exec`。
-   **已收敛**：`easytierd` 的 `DEPENDS` 与 `src/Makefile` 的 `LIBS` 已去掉这三个库，
-   只保留实际使用的 `libuci` + `libjson-c`（`grep -rn ubus_ src/` 无任何调用）。
-   若将来真要上 ubus，把 `-lubus -lubox -lblobmsg_json` 加回 `LIBS` 并在 `DEPENDS` 里补上即可。
-2. **没有独立的集成测试脚本**。`setup.sh` 末尾带一段 ubusd/uci 冒烟（编译一个 ubus 客户端、注册对象、
-   `ubus list` 验证、`uci get` 验证），但没有"假 easytier-core"的端到端用例：
-   目前无法在云端自动验证"启动 → 写 firewall UCI → 延迟 reload → 停止清理"这条链路。
-3. **真机验证清单未跑**。所有已知验证都停留在宿主 gcc + golden 与包构建层面，见
-   [docs/TESTING.md](TESTING.md#5-上真机前的验证清单) 的 checklist。
+1. **`easytier-cli acl set` 的 TOML→`acl.Acl` 转换**。当前明确报错，不静默成功。
+   需要 TOML 子集解析器（chains / rules / group）+ protobuf 映射，约 400–600 行；
+   LuCI 界面保存 ACL 走 config.toml，不受影响。
+2. **ubus 对象**。设计上不提供，所有调用走 `easytier-cli api`；`grep -rn ubus_ src/` 为 0。
+   若将来要上 ubus，把 `-lubus -lubox -lblobmsg_json` 加回 `LIBS` 并补 `DEPENDS`。
+3. **"假 easytier-core" 的集成测试**。CI 只能验证编译与包内容；"启动 → 写 firewall UCI →
+   reload → 停止清理"仍然只能真机手工验证。
 
-### 待核对（代码里有疑点，未修改）
+### 真机未覆盖的路径
 
-- `src/daemon/etd_net.c` 读取了 `udp_port`（`cfg_or(c, "udp_port", NULL)`），但 `et_schema[]` 里没有这个选项，
-  所以单独的 `easytier_udp` 规则实际不会被创建；tcp 端口那条规则用的是 `proto="tcp udp"`，功能上覆盖了 UDP。
-  需确认这是有意（只保留一条合并规则）还是历史遗漏。
-- `src/lib/etd_util.c:et_log_rotate()` 仍是 `tmp + rename`，与"原地截断"的结论相反；当前无人调用它，
-  但如果将来有人图省事改用它，会重新引入 fd 指向已删 inode 的问题。
-- `luci-app-easytier/root/usr/share/easytier/{download,firewall,utils}.sh` 仍在包里（`luci.mk` 会整树安装
-  `root/`），但已无任何引用。它们与 C 实现是两套逻辑，留着容易误导后来者。
-- `src/ctl/easytierctl.c:do_service()` 用 `system()` 转发 `"/usr/sbin/easytierd service <sub>"`，
-  而整串被 `et_shell_quote()` 包成了一个带空格的单参数；该文件也没有 `#include <sys/wait.h>` 却使用了
-  `WIFEXITED()`。`easytierctl service ...` 是否真能工作需要在真机/云端确认（`/etc/init.d/easytier` 不依赖它，
-  它直接调用 `easytierd`，所以主路径不受影响）。
-- GitHub Actions 的 `PACKAGES` 列表没有 `easytierd`，而 `luci-app-easytier` 的 `LUCI_DEPENDS` 里有 `+easytierd`，
-  CI 产物会缺包。见 `.github/workflows/build.yml`。
+- 守护进程生命周期（`easytierd service start/stop/reload`、firewall UCI、TUN、watchdog、
+  日志原地轮转）：只做了静态与代码级核对，没在真机上完整跑过一轮（怕打断测试路由的 8 节点组网）。
+- `easytier-core` 二进制不由本包提供：`-c` Release 只发三个 C 包，核心需从上游 Release
+  下载或走 LuCI「上传程序」页。测试机上 `easytier-core: not found` 属预期（只装了 easytierd.apk）。
+
+### 有意保留的差异（不再修）
+
+- `easytier-cli <cmd> --help` 是手写三段式（用法/子命令/选项），不是 clap 逐字文本。
+- 终端宽度裁剪：统一"从最右列往左丢"；上游是每个命令各自的 drop/optional 列清单。
+  只在交互式终端窄于表宽时可见差异，管道/重定向完全一致。
+- `gen-autocomplete` 是手写静态脚本，不是 clap_complete 生成。
+- `-v/--verbose` 只往 stderr 打调试，不输出上游那种原始 protobuf JSON。
+- `peer-center` 行序确定性（上游 HashMap 随机序，无法对齐）。
+- `stun` 读 core 已采集的 `NodeInfo.stun_info`，不自己发 STUN 包。
+
+### 这一轮修掉的问题（2026-11-06，记录备查）
+
+| 问题 | 原因 | 处理 |
+| --- | --- | --- |
+| `easytier-cli service <sub>` 只打印用法、不执行 | 转发给 easytierd 时漏了 `service` 关键字 | 已修，真机 rc=0/3 验证 |
+| 状态页/CLI 连不上改过 rpc_portal 端口的核心 | 写死 `127.0.0.1:15888` | 已修：conninfo 读 UCI `rpc_portal` |
+| `route dump` 只输出 237/2151 行 | 8 KB 定长缓冲截断 | 已修：整段输出，与上游逐字节一致 |
+| 所有 `-o json` 输出首字节多一个换行 | JSON 根节点前也插了换行 | 已修：根节点不换行 |
+| `node -o json` 字段少于上游 | 只输出子集，且未按 proto3 JSON 裁默认值 | 已修：pbjson 语义，逐字节一致 |
+| connector/vpn-portal/acl stats/port-forward/whitelist/logger/credential 的 JSON 与上游不一致 | 未按 pbjson 省略默认值、空结果形状不对 | 已修（空结果与常见场景逐字节一致） |
+| `peer` 的 NAT 列输出 `NoPAT`，上游是 `NoPat` | 枚举名大小写抄错 | 已修 |
+| `node config` 少一个尾部换行 | 上游是 `println!("{}", config)` | 已修 |
+| 缺 2.7.0 的三个 peer 子命令 | 未实现 | 已补：`peer ipv6` / `list-foreign [--trusted-keys]` / `list-global-foreign` |
+| 子命令 `--help` 打全局 usage | 未实现 | 已补手写帮助（见上方"有意保留的差异"） |
+
+### 待核对（历史遗留，未改）
+
+- `src/daemon/etd_net.c` 读取 `udp_port`，但 `et_schema[]` 没有这项，单独 UDP 规则不会创建；
+  tcp 那条用 `proto="tcp udp"` 已覆盖 UDP。需确认是有意合并还是遗漏。
+- `src/lib/etd_util.c:et_log_rotate()` 仍是 `tmp + rename`（无人调用；误用会重新引入
+  fd 指向已删 inode 的问题）。

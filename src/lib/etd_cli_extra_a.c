@@ -137,10 +137,12 @@ static void connector_json(struct et_cli_ctx *ctx, const struct conn_list *l)
 			et_json_obj_begin(&j, "url");
 			et_json_str(&j, "url", l->v[i].url);
 			et_json_obj_end(&j);
-		} else {
-			et_json_null(&j, "url");
 		}
-		et_json_uint(&j, "status", l->v[i].status);
+		/* pbjson：枚举 0（CONNECTED）是默认值，不输出 */
+		if (l->v[i].status)
+			et_json_str(&j, "status",
+				    l->v[i].status == 1 ? "DISCONNECTED"
+							: "CONNECTING");
 		et_json_obj_end(&j);
 	}
 	et_json_arr_end(&j);
@@ -525,6 +527,66 @@ static int cmd_vpn_portal_show(struct et_cli_ctx *ctx)
 	if (fetch_vpn_info(ctx, &vi)) {
 		fprintf(stderr, "easytier-cli: failed to get vpn portal info\n");
 		return 1;
+	}
+	if (et_cli_want_json(&ctx->opts)) {
+		/* pbjson(VpnPortalInfo)：空串/空数组/枚举 0 都不输出 */
+		et_json j;
+
+		et_json_init(&j, &ctx->out);
+		et_json_obj_begin(&j, NULL);
+		if (vi.have_vpn_type && vi.vpn_type[0])
+			et_json_str(&j, "vpn_type", vi.vpn_type);
+		if (vi.have_listener && vi.listener[0])
+			et_json_str(&j, "listener", vi.listener);
+		if (vi.nclients) {
+			et_json_arr_begin(&j, "clients");
+			for (int i = 0; i < vi.nclients; i++) {
+				const struct vpn_client *c = &vi.clients[i];
+
+				et_json_obj_begin(&j, NULL);
+				if (c->name[0])
+					et_json_str(&j, "name", c->name);
+				if (c->virtual_ip[0])
+					et_json_str(&j, "virtual_ip",
+						    c->virtual_ip);
+				if (c->groups[0]) {
+					char tmp[256];
+					char *save = NULL, *tok;
+
+					snprintf(tmp, sizeof(tmp), "%s",
+						 c->groups);
+					et_json_arr_begin(&j, "groups");
+					for (tok = strtok_r(tmp, ",", &save);
+					     tok; tok = strtok_r(NULL, ",",
+								 &save))
+						et_json_str(&j, NULL, tok);
+					et_json_arr_end(&j);
+				}
+				if (c->state)
+					et_json_str(&j, "state",
+						    vpn_state_name(c->state));
+				if (c->have_peer_id)
+					et_json_uint(&j, "peer_id",
+						     c->peer_id);
+				if (c->have_endpoint && c->endpoint[0])
+					et_json_str(&j, "endpoint",
+						    c->endpoint);
+				if (c->have_tunnel_ip && c->tunnel_ip[0])
+					et_json_str(&j, "tunnel_ip",
+						    c->tunnel_ip);
+				if (c->client_config[0])
+					et_json_str(&j, "client_config",
+						    c->client_config);
+				if (c->have_error && c->error[0])
+					et_json_str(&j, "error", c->error);
+				et_json_obj_end(&j);
+			}
+			et_json_arr_end(&j);
+		}
+		et_json_obj_end(&j);
+		et_cli_puts(ctx, "\n");
+		free(vi.clients);
+		return 0;
 	}
 	et_cli_printf(ctx, "portal_name: %s\n",
 		      vi.have_vpn_type ? vi.vpn_type : "null");

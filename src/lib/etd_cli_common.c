@@ -420,8 +420,11 @@ static void j_pre(et_json *j, const char *key)
 		et_buf_addc(j->out, ',');
 	if (j->depth < 24)
 		j->first[j->depth] = 1;
-	et_buf_addc(j->out, '\n');
-	j_indent(j, j->depth);
+	/* 根节点前不换行（上游 serde_json::to_string_pretty 首字符就是 '{'/'['） */
+	if (j->depth > 0) {
+		et_buf_addc(j->out, '\n');
+		j_indent(j, j->depth);
+	}
 	if (key) {
 		et_buf_addc(j->out, '"');
 		et_buf_add_json(j->out, key);
@@ -500,9 +503,17 @@ void et_json_uint(et_json *j, const char *key, unsigned long long v)
 
 void et_json_double(et_json *j, const char *key, double v)
 {
-	char buf[40];
+	char buf[48];
+	size_t n;
 
+	/* serde_json：f64 一定带小数点（0 输出 0.0），其余用最短往返表示 */
 	et_fmt_f64(v, buf, sizeof(buf));
+	n = strlen(buf);
+	if (!strpbrk(buf, ".eE") && n + 3 < sizeof(buf)) {
+		buf[n++] = '.';
+		buf[n++] = '0';
+		buf[n] = 0;
+	}
 	j_pre(j, key);
 	et_buf_add(j->out, buf);
 }
@@ -1164,6 +1175,34 @@ int et_pb_foreach_str(const uint8_t *d, size_t n, unsigned field,
 	return rc;
 }
 
+/* base64（标准字母表 + '=' 填充）：trusted_keys.pubkey 等二进制字段展示用 */
+void et_b64_encode(const uint8_t *in, size_t n, char *out, size_t cap)
+{
+	static const char tbl[] =
+		"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+	size_t o = 0;
+
+	if (!out || cap == 0)
+		return;
+	out[0] = 0;
+	for (size_t i = 0; i < n; i += 3) {
+		uint32_t v = (uint32_t)in[i] << 16;
+		int rem = (int)(n - i);
+
+		if (rem > 1)
+			v |= (uint32_t)in[i + 1] << 8;
+		if (rem > 2)
+			v |= in[i + 2];
+		if (o + 4 >= cap)
+			break;
+		out[o++] = tbl[(v >> 18) & 0x3f];
+		out[o++] = tbl[(v >> 12) & 0x3f];
+		out[o++] = rem > 1 ? tbl[(v >> 6) & 0x3f] : '=';
+		out[o++] = rem > 2 ? tbl[v & 0x3f] : '=';
+	}
+	out[o] = 0;
+}
+
 /* ================= 格式化 ================= */
 
 void et_fmt_size(unsigned long long bytes, char *out, size_t cap)
@@ -1189,7 +1228,7 @@ void et_fmt_size(unsigned long long bytes, char *out, size_t cap)
 const char *et_nat_name(unsigned long long v)
 {
 	static const char *names[] = { "Unknown",        "OpenInternet",
-				       "NoPAT",          "FullCone",
+				       "NoPat",          "FullCone",
 				       "Restricted",     "PortRestricted",
 				       "Symmetric",      "SymUdpFirewall",
 				       "SymmetricEasyInc", "SymmetricEasyDec" };
@@ -1288,11 +1327,67 @@ void et_fmt_url(const uint8_t *msg, size_t n, char *out, size_t cap)
 
 /* ================= 分发 ================= */
 
+/* 子命令级 --help：上游由 clap 生成，这里给出等价的用法/子命令/选项三段 */
+static void sub_help(const char *cmd, et_buf *out)
+{
+	struct {
+		const char *cmd;
+		const char *subs;
+	} tab[] = {
+		{ "peer", "list             List connected peers\n  ipv6             Show public IPv6 address information\n  list-foreign     List foreign networks discovered by this instance\n  list-global-foreign  List global foreign networks from the peer center" },
+		{ "route", "list             List routes\n  dump             Dump routing table info" },
+		{ "node", "info             Show node info\n  config           Show node config" },
+		{ "connector", "list             List connectors\n  add <URL>        Add a connector\n  remove <URL>     Remove a connector\n  clear            Clear all connectors" },
+		{ "mapped-listener", "list             List mapped listeners\n  add <URL>        Add a mapped listener\n  remove <URL>     Remove a mapped listener\n  clear            Clear all mapped listeners" },
+		{ "vpn-portal", "show             Show vpn portal info\n  add-client NAME --virtual-ip <CIDR> [--groups <G>]\n  remove-client NAME\n  clear-clients" },
+		{ "proxy", "list             List tcp proxy entries\n  add <SRC> <DST>  Add a tcp proxy entry\n  remove <SRC> <DST>  Remove a tcp proxy entry\n  clear            Clear all tcp proxy entries" },
+		{ "acl", "stats            Show ACL statistics\n  set <ACL>        Patch ACL config (TOML)" },
+		{ "port-forward", "list             List port forward rules\n  add <BIND> <DST> Add a port forward rule\n  remove <BIND> <DST>  Remove a port forward rule\n  clear            Clear all port forward rules" },
+		{ "whitelist", "show             Show port whitelist\n  set <PORTS> --tcp Add TCP ports to whitelist\n  set <PORTS> --udp Add UDP ports to whitelist\n  clear            Clear whitelist" },
+		{ "stats", "show             Show stats\n  prometheus       Show prometheus metrics" },
+		{ "logger", "get              Get current log level\n  set <LEVEL>      Set log level (disabled/error/warning/info/debug/trace)" },
+		{ "credential", "list             List credentials\n  generate [OPTIONS]  Generate a credential\n  revoke <ID>      Revoke a credential" },
+		{ "gen-autocomplete", "bash | zsh | fish | powershell | elvish | nu" },
+		{ NULL, NULL }
+	};
+	const char *extra = NULL;
+
+	if (!strcmp(cmd, "stun") || !strcmp(cmd, "peer-center"))
+		extra = "  (no subcommands)";
+	et_buf_addf(out, "Usage: easytier-cli %s [OPTIONS]", cmd);
+	if (extra)
+		et_buf_add(out, "\n");
+	else
+		et_buf_add(out, " [COMMAND]\n");
+	for (int i = 0; tab[i].cmd; i++)
+		if (!strcmp(tab[i].cmd, cmd)) {
+			et_buf_add(out, "\nCommands:\n  ");
+			et_buf_add(out, tab[i].subs);
+			et_buf_add(out, "\n");
+			break;
+		}
+	if (extra)
+		et_buf_addf(out, "\n%s\n", extra);
+	et_buf_add(out,
+		   "\nOptions:\n  -h, --help  Print help\n\nGlobal options (before the command):\n"
+		   "  -p, --rpc-portal <ADDR>  -o, --output <table|json>  --no-trunc\n"
+		   "  -i, --instance-id <UUID>  -n, --instance-name <NAME>  -v, --verbose\n");
+}
+
 int et_cli_dispatch(struct et_cli_ctx *ctx, const char *cmd, int argc,
 		    char **argv)
 {
 	if (!cmd)
 		return ET_ENOENT;
+	if (argc > 0 && (!strcmp(argv[0], "-h") || !strcmp(argv[0], "--help"))) {
+		et_buf b;
+
+		et_buf_init(&b);
+		sub_help(cmd, &b);
+		et_buf_add(&ctx->out, b.p ? b.p : "");
+		et_buf_free(&b);
+		return ET_OK;
+	}
 	if (!strcmp(cmd, "peer"))
 		return et_cli_peer(ctx, argc, argv);
 	if (!strcmp(cmd, "route"))
@@ -1398,6 +1493,11 @@ void et_cli_fanout_end(struct et_cli_ctx *ctx, struct et_cli_fanout *f)
 
 int et_cli_render_part(const char *part, et_buf *out)
 {
+	return et_cli_render_part_ex(part, NULL, out);
+}
+
+int et_cli_render_part_ex(const char *part, const char *rpc_addr, et_buf *out)
+{
 	struct et_cli_ctx ctx;
 	struct et_cli_opts o;
 	const char *cmd = NULL;
@@ -1438,6 +1538,8 @@ int et_cli_render_part(const char *part, et_buf *out)
 	memset(&ctx, 0, sizeof(ctx));
 	et_cli_opts_init(&o);
 	o.no_trunc = 1; /* 服务端渲染：不做终端宽度裁剪 */
+	if (rpc_addr && *rpc_addr)
+		o.rpc = rpc_addr; /* 跟随 UCI 的 rpc_portal 端口 */
 	ctx.opts = o;
 	et_buf_init(&ctx.out);
 	if (sub)

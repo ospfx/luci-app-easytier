@@ -55,8 +55,11 @@ src/api/etd_api_conninfo.c  状态页连接信息：**进程内**调用 et_cli_r
 | 上游命令 | RPC（服务/方法） | 输出 |
 | --- | --- | --- |
 | peer [list] | PeerManageRpc 1 + 3 + 7 | markdown 表，本机行 + 多 peer 行；排序 Local 优先 → PublicServer_ 前缀 → IPv4 → hostname |
+| peer ipv6 | PeerManageRpc 7 + 3 + 2 | 6 列 markdown 表（本机行在首）+ 本机 provider 段（prefix / 租约表） |
+| peer list-foreign [--trusted-keys] | PeerManageRpc 5 | "N Network Name: xxx" + 每个 peer 一行 conns；--trusted-keys 追加 trusted_keys 段 |
+| peer list-global-foreign | PeerManageRpc 6 | "Peer ID: N" + 每个外网一行（含 PeerIds: [a, b]） |
 | route [list] | PeerManageRpc 3 + 1 + 7 | 13 列 markdown 表；next_hop 关联不上时跳过该行（与上游一致） |
-| route dump | PeerManageRpc 4 | 原样文本 |
+| route dump | PeerManageRpc 4 | `response: ` + core 生成的 ~50 KB Debug 文本，整段输出（不要用定长缓冲） |
 | node [info｜config] | PeerManageRpc 7 | 键值表（Virtual IP 作表头、Interface IPv4/IPv6、Listener 0 基） |
 | connector [list｜add｜remove] | ConnectorManageRpc 1 + ConfigRpc 1 | Rust {:#?} 版式 |
 | mapped-listener [list｜add｜remove] | MappedListenerManageRpc 1 + ConfigRpc 1 | Rust {:#?} 版式 |
@@ -72,6 +75,13 @@ src/api/etd_api_conninfo.c  状态页连接信息：**进程内**调用 et_cli_r
 | stun | PeerManageRpc 7 的 NodeInfo.stun_info | Rust {:#?} 版式（见 §5 差异） |
 | gen-autocomplete <shell> | — | bash/zsh/fish/powershell/elvish/nu 静态补全脚本 |
 | -o json / --no-trunc / -i / -n / -p / -v | — | 与上游 clap 语义一致；多实例时输出 {instance_id, instance_name, result} |
+
+**`-o json` 的统一规则（很容易踩）**：
+- 单实例直接输出值本身；多实例才包 `{instance_id, instance_name, result}`；
+- 首字符就是 `{`/`[`，根节点前**不能**有换行；
+- 走 pbjson（proto3 JSON）语义：默认值（空串/空数组/0/false/枚举 0）**不输出**，
+  枚举输出变体名（`"PortRestricted"`），int64/uint64 输出**字符串**，重复字段是真数组；
+- f64 一定带小数点（0 输出 `0.0`），其余用最短往返表示。
 
 ## 4. 关键协议坑（这次踩出来的）
 
@@ -96,7 +106,10 @@ src/api/etd_api_conninfo.c  状态页连接信息：**进程内**调用 et_cli_r
 | acl set | 明确报"未实现 TOML→protobuf 转换"，不静默成功 | 保证用户不会误以为规则已生效 |
 | peer-center 行序 | 按 RPC 返回的 map 顺序（确定性），上游是 HashMap 随机序 | 上游每次顺序不同，无法也不该对齐 |
 | -v（verbose） | 只打调试信息到 stderr，不输出上游那种原始 protobuf JSON | 原始消息 JSON 需要完整 serde 映射，收益低 |
-| service | 保持本项目语义（转发给 easytierd 的 start/stop/...） | OpenWrt 包，服务由 procd 管理 |
+| service | 保持本项目语义（转发给 easytierd 的 start/stop/...），且必须补 `service` 关键字 | OpenWrt 包，服务由 procd 管理 |
+| 子命令 --help | 手写三段式帮助，不是 clap 逐字文本 | 只影响可读性，命令/选项含义一致 |
+| 终端宽度裁剪 | 统一从最右列往左丢；上游每个命令各有 drop 列清单 | 只在交互式终端窄于表宽时可见，管道/重定向一致 |
+| gen-autocomplete | 手写静态脚本 | clap_complete 生成产物不稳定，静态脚本够用 |
 
 ## 6. 验证环境与对拍方法
 
@@ -129,6 +142,19 @@ src/api/etd_api_conninfo.c  状态页连接信息：**进程内**调用 et_cli_r
     [ "$a" = "$b" ] && echo "OK   $c" || echo "DIFF $c"
   done
   ```
+
+- **2026-11-06 对拍结果**（上游 2.7.0-8b7f1f01 vs 本实现，同一 8 节点组网）：
+  - 文本模式逐字节一致：`route`、`node`、`node config`、`connector`、`mapped-listener`、
+    `vpn-portal`、`proxy`、`acl stats`、`port-forward list`、`whitelist show`、
+    `stats show`、`logger get`、`credential list`、`peer ipv6`、`peer list-foreign`、
+    `peer list-global-foreign`、`route dump`（2151 行全等）；
+  - `peer`：去掉动态数值（lat/loss/rx/tx）后逐字节一致；
+  - `-o json`：`peer/route/node/connector/mapped-listener/vpn-portal/proxy/acl stats/
+    port-forward list/whitelist show/logger get/credential list/peer ipv6/peer list-foreign/
+    peer list-global-foreign` 全部逐字节一致（`peer` 需忽略动态数值）；
+  - `-i <uuid>`、`-n <name>` 与上游行为一致（`-n default` 命中，错误名同样报
+    `No instance matches the selector`）；
+  - 退出码：成功 0，失败 1（与上游一致）。
 
 - 写操作验证要另起临时 core（不要动 15888 上的用户网络）：
 
@@ -168,6 +194,10 @@ src/api/etd_api_conninfo.c  状态页连接信息：**进程内**调用 et_cli_r
 
 ## 9. 剩余可做（非阻塞）
 
-- acl set 的 TOML→acl.Acl 转换（可用 src/lib/etd_toml.c 扩展）
-- peer ipv6 / peer list-foreign / peer list-global-foreign（2.7.0 有，属附加命令）
+- `acl set` 的 TOML→`acl.Acl` 转换（可基于 src/lib/etd_toml.c 扩展，约 400–600 行）
+- 终端宽度裁剪改成上游的 per-command drop/optional 列清单（只影响交互式终端）
+- `-v` 输出原始 protobuf JSON（需要完整 serde 映射）
+- 平台：2.6.4 内核不认识 2.7.0 新增旗标（`--tcp-stun-servers`、`--socket-mark`、
+  `--vpn-portal-client(-group)`、`--vpn-portal-private-key`）。这些只有用户显式配置时才发射，
+  默认不会带；若以后要同时支持 2.6.4，需要按 core 版本过滤 argv。
 - -v 输出上游那种原始 protobuf JSON（需要完整 serde 映射）

@@ -10,7 +10,7 @@ OpenWrt LuCI web interface for managing [EasyTier](https://github.com/EasyTier/E
 
 > **The `main` branch is the C-backend rewrite.** Process supervision, configuration handling, firewall
 > orchestration, binary download/install and status collection are all implemented in C
-> (`/usr/sbin/easytierd`, `/usr/sbin/easytier-cli`); LuCI keeps only a 129-line forwarding shell.
+> (`/usr/sbin/easytierd`, `/usr/bin/easytier-cli`); LuCI keeps only a 129-line forwarding shell.
 > The old Lua + Shell implementation lives in [`legacy/lua`](../../tree/legacy/lua); see
 > [docs/C-PORT.md](docs/C-PORT.md) for the module-by-module comparison.
 
@@ -40,7 +40,7 @@ Two processes plus one thin forwarding shell; business logic exists exactly once
 flowchart LR
     B["Browser<br/>ES5 + XMLHttpRequest"] -->|HTTP| U["uhttpd"]
     U --> L["LuCI Lua1<br/>controller/easytier.lua<br/>129 lines: menu + forward"]
-    L -->|"sys.exec:<br/>easytier-cli api &lt;method&gt; k=v..."| C["easytier-cli<br/>/usr/sbin/easytier-cli"]
+    L -->|"sys.exec:<br/>easytier-cli api &lt;method&gt; k=v..."| C["easytier-cli<br/>/usr/bin/easytier-cli"]
     C -->|"same handlers<br/>route table et_routes[]"| D["easytierd<br/>/usr/sbin/easytierd"]
     D -->|"UCI / signals"| F[("/etc/config/easytier<br/>/etc/easytier/config.toml")]
     D -->|fork + exec| E["easytier-core<br/>(+ easytier-web-embed)"]
@@ -82,7 +82,7 @@ Key design points:
 
 | Package | Contents | Role | Depends |
 | --- | --- | --- | --- |
-| `easytierd` | `/usr/sbin/easytierd`, `/usr/sbin/easytier-cli` | **C backend**: supervision, config model, firewall/interface orchestration, status, logs, upload/download/install, i18n dictionary | `libuci` `libjson-c` |
+| `easytierd` | `/usr/sbin/easytierd`, `/usr/bin/easytier-cli` | **C backend**: supervision, config model, firewall/interface orchestration, status, logs, upload/download/install, i18n dictionary | `libuci` `libjson-c` |
 | `luci-app-easytier` | `luasrc/controller/easytier.lua`, 6 HTM templates, `/etc/init.d/easytier` (24 lines), UCI defaults, rpcd ACL, i18n JSON | **UI and bridge**: menu, templates, forward requests to `easytier-cli` | `+kmod-tun` `+luci-compat` **`+easytierd`** |
 
 `luci-app-easytier` hard-depends on `easytierd`: without it the pages load but every endpoint fails. The package
@@ -232,7 +232,7 @@ Full module mapping and the complete list of differences: [docs/C-PORT.md](docs/
 `easytierd` is missing or not executable:
 
 ```bash
-ls -l /usr/sbin/easytierd /usr/sbin/easytier-cli
+ls -l /usr/sbin/easytierd /usr/bin/easytier-cli
 easytier-cli doctor      # UCI, binaries, arch, external tools, disk, processes
 ```
 

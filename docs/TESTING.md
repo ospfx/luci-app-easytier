@@ -305,7 +305,7 @@ tail -n 5 /tmp/easytier.log
 
 ### 5.1 安装与升级
 
-- [ ] `opkg install easytierd_*.ipk luci-app-easytier_*.ipk` 成功，`ls -l /usr/sbin/easytierd /usr/sbin/easytier-cli`
+- [ ] `opkg install easytierd_*.ipk luci-app-easytier_*.ipk` 成功，`ls -l /usr/sbin/easytierd /usr/bin/easytier-cli`
       存在且可执行
 - [ ] 从旧版（`legacy/lua`）覆盖升级：`/etc/config/easytier` 与 `/etc/easytier/` 内容保留；
       升级后第一次启动日志里没有"配置解析失败"

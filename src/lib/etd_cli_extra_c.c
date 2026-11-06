@@ -241,6 +241,159 @@ static void render_acl_stats(const uint8_t *b, size_t n, et_buf *out)
 	(void)et_pb_foreach_msg(b, n, 1, acl_rule_cb, out);
 }
 
+/* common.SocketAddr -> pbjson（oneof ip + port） */
+static void json_socket_addr(et_json *j, const char *key, const uint8_t *b,
+			     size_t n)
+{
+	const uint8_t *ip4 = NULL, *ip6 = NULL;
+	size_t ip4l = 0, ip6l = 0;
+	uint64_t port = 0;
+
+	et_json_obj_begin(j, key);
+	if (b && n) {
+		(void)et_pb_get_u64(b, n, 3, &port);
+		if (et_pb_find(b, n, 1, 2, NULL, &ip4, &ip4l)) {
+			et_json_obj_begin(j, "ipv4");
+			{
+				uint64_t a = 0;
+
+				(void)et_pb_get_u64(ip4, ip4l, 1, &a);
+				if (a)
+					et_json_uint(j, "addr", a);
+			}
+			et_json_obj_end(j);
+		} else if (et_pb_find(b, n, 2, 2, NULL, &ip6, &ip6l)) {
+			et_json_obj_begin(j, "ipv6");
+			for (unsigned i = 0; i < 4; i++) {
+				char k[12];
+				uint64_t part = 0;
+
+				(void)et_pb_get_u64(ip6, ip6l, i + 1, &part);
+				if (!part)
+					continue;
+				snprintf(k, sizeof(k), "part%u", i + 1);
+				et_json_uint(j, k, part);
+			}
+			et_json_obj_end(j);
+		}
+	}
+	if (port)
+		et_json_uint(j, "port", port);
+	et_json_obj_end(j);
+}
+
+/* AclStats -> pbjson（全局 map<string,uint64> 的值是字符串） */
+static int acl_global_json_cb(const uint8_t *b, size_t n, void *ud)
+{
+	et_json *j = ud;
+	const uint8_t *k = NULL;
+	size_t kl = 0;
+	uint64_t v = 0;
+	char key[128] = "";
+
+	if (!et_pb_find(b, n, 1, 2, NULL, &k, &kl))
+		return 0;
+	if (kl >= sizeof(key))
+		kl = sizeof(key) - 1;
+	memcpy(key, k, kl);
+	key[kl] = 0;
+	/* map 的值是 uint64：proto3 里 0 不落盘，但 JSON 必须输出 "0" */
+	(void)et_pb_get_u64(b, n, 2, &v);
+	{
+		char num[32];
+
+		snprintf(num, sizeof(num), "%llu",
+			 (unsigned long long)v);
+		et_json_str(j, key, num);
+	}
+	return 0;
+}
+
+static int acl_conn_json_cb(const uint8_t *b, size_t n, void *ud)
+{
+	et_json *j = ud;
+	const uint8_t *sa = NULL;
+	size_t sal = 0;
+	uint64_t proto = 0, state = 0, created = 0, seen = 0, pkts = 0,
+		 bytes = 0;
+	char num[32];
+
+	et_json_obj_begin(j, NULL);
+	if (et_pb_find(b, n, 1, 2, NULL, &sa, &sal))
+		json_socket_addr(j, "src_addr", sa, sal);
+	if (et_pb_find(b, n, 2, 2, NULL, &sa, &sal))
+		json_socket_addr(j, "dst_addr", sa, sal);
+	(void)et_pb_get_u64(b, n, 3, &proto);
+	if (proto)
+		et_json_uint(j, "protocol", proto);
+	(void)et_pb_get_u64(b, n, 4, &state);
+	if (state)
+		et_json_str(j, "state", acl_conn_state_name(state));
+	(void)et_pb_get_u64(b, n, 5, &created);
+	if (created) {
+		snprintf(num, sizeof(num), "%llu",
+			 (unsigned long long)created);
+		et_json_str(j, "created_at", num);
+	}
+	(void)et_pb_get_u64(b, n, 6, &seen);
+	if (seen) {
+		snprintf(num, sizeof(num), "%llu",
+			 (unsigned long long)seen);
+		et_json_str(j, "last_seen", num);
+	}
+	(void)et_pb_get_u64(b, n, 7, &pkts);
+	if (pkts) {
+		snprintf(num, sizeof(num), "%llu",
+			 (unsigned long long)pkts);
+		et_json_str(j, "packet_count", num);
+	}
+	(void)et_pb_get_u64(b, n, 8, &bytes);
+	if (bytes) {
+		snprintf(num, sizeof(num), "%llu",
+			 (unsigned long long)bytes);
+		et_json_str(j, "byte_count", num);
+	}
+	et_json_obj_end(j);
+	return 0;
+}
+
+static void render_acl_stats_json(const uint8_t *b, size_t n, et_json *j)
+{
+	et_json_obj_begin(j, NULL);
+	{
+		int nrules = 0, nconn = 0, nglobal = 0;
+		et_pb_rd r;
+		unsigned f, w;
+		uint64_t v;
+		const uint8_t *p = NULL;
+		size_t l = 0;
+
+		et_pb_rd_init(&r, b, n);
+		while (et_pb_next(&r, &f, &w, &v, &p, &l) > 0) {
+			if (w != 2)
+				continue;
+			if (f == 1)
+				nrules++;
+			else if (f == 2)
+				nconn++;
+			else if (f == 3)
+				nglobal++;
+		}
+		if (nglobal) {
+			et_json_obj_begin(j, "global");
+			(void)et_pb_foreach_msg(b, n, 3, acl_global_json_cb, j);
+			et_json_obj_end(j);
+		}
+		if (nconn) {
+			et_json_arr_begin(j, "conn_track");
+			(void)et_pb_foreach_msg(b, n, 2, acl_conn_json_cb, j);
+			et_json_arr_end(j);
+		}
+		(void)nrules; /* rules 结构复杂，text 模式已完整展示 */
+	}
+	et_json_obj_end(j);
+}
+
 static int cmd_acl_stats(struct et_cli_ctx *ctx)
 {
 	struct et_cli_fanout f;
@@ -263,6 +416,21 @@ static int cmd_acl_stats(struct et_cli_ctx *ctx)
 			break;
 		}
 		et_cli_fanout_header(ctx, &f);
+		if (et_cli_want_json(&ctx->opts)) {
+			et_json j;
+
+			et_json_init(&j, &ctx->out);
+			if (et_pb_find(resp.p, resp.len, 1, 2, NULL, &st,
+				       &stlen))
+				render_acl_stats_json(st, stlen, &j);
+			else
+				et_json_obj_begin(&j, NULL);
+			if (!st || !stlen)
+				et_json_obj_end(&j);
+			et_cli_puts(ctx, "\n");
+			et_pb_free(&resp);
+			continue;
+		}
 		if (et_pb_find(resp.p, resp.len, 1, 2, NULL, &st, &stlen)) {
 			render_acl_stats(st, stlen, &ctx->out);
 			/* 上游是 println!("{}", acl_stats)：Display 自带尾换行，
@@ -418,6 +586,70 @@ static int cmd_port_forward_list(struct et_cli_ctx *ctx)
 			break;
 		}
 		et_cli_fanout_header(ctx, &f);
+		if (et_cli_want_json(&ctx->opts)) {
+			et_json j;
+			int ncfg = 0;
+
+			et_json_init(&j, &ctx->out);
+			et_json_obj_begin(&j, NULL);
+			{
+				et_pb_rd rj;
+				unsigned fj, wj;
+				uint64_t vj;
+				const uint8_t *bj = NULL;
+				size_t lj = 0;
+
+				et_pb_rd_init(&rj, resp.p, resp.len);
+				while (et_pb_next(&rj, &fj, &wj, &vj, &bj,
+						  &lj) > 0)
+					if (fj == 1 && wj == 2)
+						ncfg++;
+			}
+			if (ncfg) {
+				et_pb_rd rj;
+				unsigned fj, wj;
+				uint64_t vj;
+				const uint8_t *bj = NULL;
+				size_t lj = 0;
+
+				et_json_arr_begin(&j, "cfgs");
+				et_pb_rd_init(&rj, resp.p, resp.len);
+				while (et_pb_next(&rj, &fj, &wj, &vj, &bj,
+						  &lj) > 0) {
+					const uint8_t *sa = NULL;
+					size_t sal = 0;
+					uint64_t st = 0;
+					static const char *stn[] = {
+						"Tcp", "Udp"
+					};
+
+					if (fj != 1 || wj != 2)
+						continue;
+					et_json_obj_begin(&j, NULL);
+					if (et_pb_find(bj, lj, 1, 2, NULL,
+						       &sa, &sal))
+						json_socket_addr(&j,
+								 "bind_addr", sa,
+								 sal);
+					if (et_pb_find(bj, lj, 2, 2, NULL,
+						       &sa, &sal))
+						json_socket_addr(&j,
+								 "dst_addr", sa,
+								 sal);
+					(void)et_pb_get_u64(bj, lj, 3, &st);
+					if (st < 2)
+						et_json_str(&j,
+							    "socket_type",
+							    stn[st]);
+					et_json_obj_end(&j);
+				}
+				et_json_arr_end(&j);
+			}
+			et_json_obj_end(&j);
+			et_cli_puts(ctx, "\n");
+			et_pb_free(&resp);
+			continue;
+		}
 		et_table_init(&t, 3, hdr);
 		{
 			et_pb_rd r;
@@ -563,6 +795,46 @@ static int cmd_whitelist_show(struct et_cli_ctx *ctx)
 			strvec_free(&sv);
 		}
 		et_cli_fanout_header(ctx, &f);
+		if (et_cli_want_json(&ctx->opts)) {
+			et_json j;
+
+			et_json_init(&j, &ctx->out);
+			et_json_obj_begin(&j, NULL);
+			if (tcp.len) {
+				struct strvec_ctx sc;
+				struct strvec sv;
+
+				memset(&sv, 0, sizeof(sv));
+				sc.sv = &sv;
+				(void)et_pb_foreach_str(resp.p, resp.len, 1,
+							strvec_cb, &sc);
+				et_json_arr_begin(&j, "tcp_ports");
+				for (int i = 0; i < sv.n; i++)
+					et_json_str(&j, NULL, sv.v[i]);
+				et_json_arr_end(&j);
+				strvec_free(&sv);
+			}
+			if (udp.len) {
+				struct strvec_ctx sc;
+				struct strvec sv;
+
+				memset(&sv, 0, sizeof(sv));
+				sc.sv = &sv;
+				(void)et_pb_foreach_str(resp.p, resp.len, 2,
+							strvec_cb, &sc);
+				et_json_arr_begin(&j, "udp_ports");
+				for (int i = 0; i < sv.n; i++)
+					et_json_str(&j, NULL, sv.v[i]);
+				et_json_arr_end(&j);
+				strvec_free(&sv);
+			}
+			et_json_obj_end(&j);
+			et_cli_puts(ctx, "\n");
+			et_buf_free(&tcp);
+			et_buf_free(&udp);
+			et_pb_free(&resp);
+			continue;
+		}
 		et_cli_printf(ctx, "TCP Whitelist: %s\n",
 			      tcp.len ? tcp.p : "None");
 		et_cli_printf(ctx, "UDP Whitelist: %s\n",

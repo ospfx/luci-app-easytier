@@ -12,6 +12,7 @@
  */
 #include "etd_api_priv.h"
 #include "etd_cli.h"
+#include "etd_uci.h"
 
 #include <ctype.h>
 #include <stdbool.h>
@@ -85,9 +86,30 @@ static void cache_write(const char *name, const char *data)
 	et_buf_free(&b);
 }
 
+/* 从 UCI 取 rpc_portal 端口（默认 15888），拼成 CLI 用的 -p 地址。
+ * core 用 "-r <port>" 启动，用户改过端口时状态页必须跟着改，否则连不上。 */
+static void conninfo_rpc_addr(char *out, size_t cap)
+{
+	et_uci *u;
+	char *port;
+
+	snprintf(out, cap, "127.0.0.1:15888");
+	u = et_uci_open();
+	if (!u)
+		return;
+	port = et_uci_get_et(u, "rpc_portal");
+	et_uci_close(u);
+	if (!port)
+		return;
+	if (port[0] && strcmp(port, "0"))
+		snprintf(out, cap, "127.0.0.1:%s", port);
+	free(port);
+}
+
 /* 进程内渲染一个分区（带缓存）。失败时给前端一条可读的错误文本。 */
 static char *render_part(const char *name)
 {
+	char rpc[64];
 	char *data = cache_read(name);
 	et_buf b;
 	int rc;
@@ -95,8 +117,9 @@ static char *render_part(const char *name)
 	if (data)
 		return data;
 
+	conninfo_rpc_addr(rpc, sizeof(rpc));
 	et_buf_init(&b);
-	rc = et_cli_render_part(name, &b);
+	rc = et_cli_render_part_ex(name, rpc, &b);
 	if (rc || !b.p || !b.len) {
 		et_buf_free(&b);
 		et_buf_init(&b);

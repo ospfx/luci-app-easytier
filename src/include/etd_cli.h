@@ -158,6 +158,9 @@ typedef int (*et_pb_str_cb)(const char *s, size_t n, void *ud);
 int et_pb_foreach_str(const uint8_t *d, size_t n, unsigned field,
 		      et_pb_str_cb cb, void *ud);
 
+/* base64（标准字母表，带 '=' 填充） */
+void et_b64_encode(const uint8_t *in, size_t n, char *out, size_t cap);
+
 /* ---------------- 格式化（与上游逐字一致） ---------------- */
 /* humansize::DECIMAL：5510 -> "5.51 kB"，0 -> "0 B" */
 void et_fmt_size(unsigned long long bytes, char *out, size_t cap);
@@ -243,5 +246,7 @@ int et_cli_dispatch(struct et_cli_ctx *ctx, const char *cmd, int argc,
  * part 名与旧 CLI_PARTS 一致：node/peer/route/connector/stun/peer_center/
  * vpn_portal/proxy/acl/mapped_listener/stats。 */
 int et_cli_render_part(const char *part, et_buf *out);
+/* 同上，但指定 RPC 地址（状态页要用 UCI 里配置的 rpc_portal 端口） */
+int et_cli_render_part_ex(const char *part, const char *rpc_addr, et_buf *out);
 
 #endif /* ETD_CLI_H */

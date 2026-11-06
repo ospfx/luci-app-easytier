@@ -118,6 +118,9 @@ static int do_service(int argc, char **argv)
 	et_buf cmd;
 	et_buf_init(&cmd);
 	et_buf_add(&cmd, ET_PATH_DAEMON);
+	/* easytierd 的入口是 "easytierd service <sub>"，这里必须补上 service，
+	 * 否则会以 "easytierd <sub>" 调用而只打印用法（真机验证过的 bug） */
+	et_buf_add(&cmd, " service");
 	for (int i = 0; i < argc; i++) {
 		char *q = et_shell_quote(argv[i]);
 

@@ -715,11 +715,15 @@ static int cmd_logger_get(struct et_cli_ctx *ctx)
 	}
 	(void)et_pb_get_u64(resp.p, resp.len, 1, &level);
 	if (et_cli_want_json(&ctx->opts)) {
+		static const char *pb[] = { "DISABLED", "ERROR", "WARNING",
+					    "INFO",     "DEBUG", "TRACE" };
 		et_json j;
 
 		et_json_init(&j, &ctx->out);
 		et_json_obj_begin(&j, NULL);
-		et_json_uint(&j, "level", level);
+		/* pbjson：枚举 0(DISABLED) 是默认值，不输出 */
+		if (level && level < 6)
+			et_json_str(&j, "level", pb[level]);
 		et_json_obj_end(&j);
 		et_cli_puts(ctx, "\n");
 	} else {
@@ -958,27 +962,73 @@ static int cmd_credential_list(struct et_cli_ctx *ctx)
 		}
 		et_cli_fanout_header(ctx, &f);
 		if (f.json) {
+			/* pbjson(ListCredentialsResponse)：响应包在
+			 * {"credentials": [...]} 里，空结果就是 {} */
 			et_cli_fanout_json_open(&f);
-			et_json_arr_begin(&f.j, f.nt > 1 ? "result" : NULL);
-			for (int i = 0; i < nrows; i++) {
-				et_json_obj_begin(&f.j, NULL);
-				et_json_str(&f.j, "credential_id", rows[i].id);
-				et_json_arr_begin(&f.j, "groups");
-				if (rows[i].groups[0])
-					et_json_str(&f.j, NULL, rows[i].groups);
+			et_json_obj_begin(&f.j, f.nt > 1 ? "result" : NULL);
+			if (nrows) {
+				et_json_arr_begin(&f.j, "credentials");
+				for (int i = 0; i < nrows; i++) {
+					et_json_obj_begin(&f.j, NULL);
+					if (rows[i].id[0])
+						et_json_str(&f.j,
+							    "credential_id",
+							    rows[i].id);
+					if (rows[i].groups[0]) {
+						char tmp[512];
+						char *save = NULL, *tok;
+
+						snprintf(tmp, sizeof(tmp), "%s",
+							 rows[i].groups);
+						et_json_arr_begin(&f.j,
+								  "groups");
+						for (tok = strtok_r(tmp,
+								    ",",
+								    &save);
+						     tok;
+						     tok = strtok_r(NULL, ",",
+								    &save))
+							et_json_str(&f.j,
+								    NULL, tok);
+						et_json_arr_end(&f.j);
+					}
+					if (rows[i].allow_relay)
+						et_json_bool(
+							&f.j, "allow_relay", 1);
+					if (rows[i].expiry) {
+						char num[32];
+
+						snprintf(num, sizeof(num),
+							 "%lld",
+							 rows[i].expiry);
+						et_json_str(&f.j,
+							    "expiry_unix",
+							    num);
+					}
+					if (rows[i].cidrs[0]) {
+						char tmp[512];
+						char *save = NULL, *tok;
+
+						snprintf(tmp, sizeof(tmp), "%s",
+							 rows[i].cidrs);
+						et_json_arr_begin(
+							&f.j,
+							"allowed_proxy_cidrs");
+						for (tok = strtok_r(tmp,
+								    ",",
+								    &save);
+						     tok;
+						     tok = strtok_r(NULL, ",",
+								    &save))
+							et_json_str(&f.j,
+								    NULL, tok);
+						et_json_arr_end(&f.j);
+					}
+					et_json_obj_end(&f.j);
+				}
 				et_json_arr_end(&f.j);
-				et_json_bool(&f.j, "allow_relay",
-					     rows[i].allow_relay);
-				et_json_int(&f.j, "expiry_unix", rows[i].expiry);
-				et_json_arr_begin(&f.j, "allowed_proxy_cidrs");
-				if (rows[i].cidrs[0])
-					et_json_str(&f.j, NULL, rows[i].cidrs);
-				et_json_arr_end(&f.j);
-				et_json_bool(&f.j, "reusable",
-					     rows[i].reusable);
-				et_json_obj_end(&f.j);
 			}
-			et_json_arr_end(&f.j);
+			et_json_obj_end(&f.j);
 			et_cli_fanout_json_close(&f);
 		} else if (nrows == 0) {
 			et_cli_puts(ctx, "No active credentials\n");
