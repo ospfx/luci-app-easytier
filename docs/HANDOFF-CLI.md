@@ -66,7 +66,7 @@ src/api/etd_api_conninfo.c  状态页连接信息：**进程内**调用 et_cli_r
 | vpn-portal [add-client｜remove-client｜clear-clients] | VpnPortalRpc 1 + ConfigRpc 1 | portal_name / listener / 每个 client 一段 |
 | proxy | TcpProxyRpc 1（domain=tcp/kcp_src/kcp_dst/quic_src/quic_dst） | markdown 表 |
 | acl stats | AclManageRpc 1 | AclStats 的 Display 文本（Global/ConnTrack/Rules） |
-| acl set | — | **未实现**：需要 TOML→acl.Acl 转换，明确报错（不静默成功） |
+| acl set <TOML\|@file> | ConfigRpc 1（InstanceConfigPatch.acl→AclPatch） | TOML 子集解析→acl.Acl；逐实例 "== label ==" + "ACL updated successfully (N chain(s))"；-o json 回显整份 ACL（group_secret 打码） |
 | port-forward [list｜add｜remove] | PortForwardManageRpc 1 + ConfigRpc 1 | markdown 表 |
 | whitelist [show｜set-tcp｜set-udp｜clear-tcp｜clear-udp] | AclManageRpc 2 + ConfigRpc 1 | 两行文本 |
 | stats [show｜prometheus] | StatsRpc 1 / 2 | Value 用 BINARY humanize、Labels 用 "k=v, k=v" |
@@ -103,7 +103,7 @@ src/api/etd_api_conninfo.c  状态页连接信息：**进程内**调用 et_cli_r
 | 项 | 差异 | 原因 |
 | --- | --- | --- |
 | stun | 直接读 core 已采集的 NodeInfo.stun_info，不自己发 STUN 包（不等 25s） | 避免 C 里再实现一套 STUN 采集；核心结果同源 |
-| acl set | 明确报"未实现 TOML→protobuf 转换"，不静默成功 | 保证用户不会误以为规则已生效 |
+| acl set 输入 | 只支持 TOML / @file；上游还接受 3 种 JSON 形态 | JSON 形态需要 json-c 依赖与额外映射，收益低；TOML 是文档主推写法 |
 | peer-center 行序 | 按 RPC 返回的 map 顺序（确定性），上游是 HashMap 随机序 | 上游每次顺序不同，无法也不该对齐 |
 | -v（verbose） | 只打调试信息到 stderr，不输出上游那种原始 protobuf JSON | 原始消息 JSON 需要完整 serde 映射，收益低 |
 | service | 保持本项目语义（转发给 easytierd 的 start/stop/...），且必须补 `service` 关键字 | OpenWrt 包，服务由 procd 管理 |
@@ -188,13 +188,13 @@ src/api/etd_api_conninfo.c  状态页连接信息：**进程内**调用 et_cli_r
 | char *rows[N][2] 强转 char *** | 指针步长错位 → SIGSEGV；先摆成 char **rows[N] |
 | et_pb_find 复用 p/n 游标 | 后续字段会在上一个字段内容里找 → 解析结果为空 |
 | 只读第一片 RPC 帧 | 大响应被分片，stats 全 0；必须按 piece_idx 重组 |
+| 实例 UUID 长度写死 24 | proto 的 common.UUID 是 4 个 uint32，序列化长度 16–24 字节可变；长度不符时 ListNetworkInstance 解析为空 → 多实例扇出静默退化成单实例 |
 | 把 RpcResponse.error 当空结果 | 服务/方法写错时静默空表；要显式报错 |
 | /tmp noexec | 上游二进制要放 /root/et/ |
 | zig cross-compile | 需要 ZIG_GLOBAL_CACHE_DIR / ZIG_LOCAL_CACHE_DIR 指到可写目录，否则 AccessDenied |
 
 ## 9. 剩余可做（非阻塞）
 
-- `acl set` 的 TOML→`acl.Acl` 转换（可基于 src/lib/etd_toml.c 扩展，约 400–600 行）
 - 终端宽度裁剪改成上游的 per-command drop/optional 列清单（只影响交互式终端）
 - `-v` 输出原始 protobuf JSON（需要完整 serde 映射）
 - 平台：2.6.4 内核不认识 2.7.0 新增旗标（`--tcp-stun-servers`、`--socket-mark`、

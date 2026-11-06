@@ -18,6 +18,6 @@ mkdir -p "$(dirname "$OUT")"
 	src/lib/etd_proc.c src/lib/etd_detect.c \
 	src/lib/etd_cli_common.c src/lib/etd_cli_peer.c \
 	src/lib/etd_cli_extra_a.c src/lib/etd_cli_extra_b.c \
-	src/lib/etd_cli_extra_c.c \
+	src/lib/etd_cli_extra_c.c src/lib/etd_cli_acl_toml.c \
 	-o "$OUT"
 echo "built $OUT"

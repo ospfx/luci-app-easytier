@@ -285,15 +285,24 @@ if (!v || !*v) {
 
 如实记录，不做美化。最近一次核对：2026-11-06（含真机对拍）。
 
-### 仍未实现（3 项）
+### 仍未实现（2 项）
 
-1. **`easytier-cli acl set` 的 TOML→`acl.Acl` 转换**。当前明确报错，不静默成功。
-   需要 TOML 子集解析器（chains / rules / group）+ protobuf 映射，约 400–600 行；
-   LuCI 界面保存 ACL 走 config.toml，不受影响。
-2. **ubus 对象**。设计上不提供，所有调用走 `easytier-cli api`；`grep -rn ubus_ src/` 为 0。
+1. **ubus 对象**。设计上不提供，所有调用走 `easytier-cli api`；`grep -rn ubus_ src/` 为 0。
    若将来要上 ubus，把 `-lubus -lubox -lblobmsg_json` 加回 `LIBS` 并补 `DEPENDS`。
-3. **"假 easytier-core" 的集成测试**。CI 只能验证编译与包内容；"启动 → 写 firewall UCI →
+2. **"假 easytier-core" 的集成测试**。CI 只能验证编译与包内容；"启动 → 写 firewall UCI →
    reload → 停止清理"仍然只能真机手工验证。
+
+### acl set（2026-11-06 补实现）
+
+`src/lib/etd_cli_acl_toml.c`（约 700 行）实现了 TOML 子集解析 + `acl.Acl` 编码：
+
+- 表头：`[acl.acl_v1]`、`[[acl.acl_v1.chains]]`、`[[acl.acl_v1.chains.rules]]`、
+  `[acl.acl_v1.group]`、`[[acl.acl_v1.group.declares]]`；
+- 值：字符串（含转义）、整数、布尔、数组（含多行数组）；
+- 枚举字段（chain_type/protocol/action）收数字（与上游 serde 一致），也接受枚举名（超集）；
+- 支持 `@path/to/acl.toml`；
+- 语义：整份替换、空 ACL 报错、多实例逐个下发、JSON 回显时 `group_secret` 打码；
+- 未支持：上游的 JSON 输入形态（PatchConfigRequest / {acl:...} / Acl 本体），会按 TOML 解析失败报错。
 
 ### 真机未覆盖的路径
 
@@ -326,6 +335,9 @@ if (!v || !*v) {
 | `node config` 少一个尾部换行 | 上游是 `println!("{}", config)` | 已修 |
 | 缺 2.7.0 的三个 peer 子命令 | 未实现 | 已补：`peer ipv6` / `list-foreign [--trusted-keys]` / `list-global-foreign` |
 | 子命令 `--help` 打全局 usage | 未实现 | 已补手写帮助（见上方"有意保留的差异"） |
+| `acl set` 不支持 | 需要 TOML→protobuf 转换 | 已实现（TOML 子集 + protobuf 编码，见上） |
+| 多实例扇出在部分 UUID 上失效 | 代码假定实例 UUID 序列化后恒为 24 字节，实际 16–24 字节可变；长度不符时列表解析为空 → 退化成单实例"selected instance" | 已修：UUID 改存变长字节 + 按 4 个 uint32 比较 |
+| 写命令在不指定实例时报 `No instance matches the selector` | 无 uuid/名字时仍塞了空 selector | 已修：不带 selector（与上游 selected instance 一致） |
 
 ### 待核对（历史遗留，未改）
 

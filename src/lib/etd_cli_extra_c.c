@@ -447,29 +447,11 @@ static int cmd_acl_stats(struct et_cli_ctx *ctx)
 
 static int cmd_acl_set(struct et_cli_ctx *ctx, const char *raw)
 {
-	/* 上游把整段 TOML 反序列化成 acl.Acl 再 PatchConfig。C 里没有 TOML→protobuf
-	 * 的通用映射，这里明确报错而不是静默成功，避免用户以为规则生效了。 */
-	if (!raw || !*raw) {
-		fprintf(stderr,
-			"error: the following required arguments were not provided:\n  <ACL>\n");
-		return 2;
-	}
-	if (raw[0] == '@')
-		fprintf(stderr,
-			"easytier-cli: acl set: 读取 %s 后需要做 TOML→protobuf 转换，"
-			"当前 C 版未实现；请在 LuCI 界面保存 ACL，或直接改 "
-			"/etc/easytier/config.toml 后重启 core。\n",
-			raw + 1);
-	else
-		fprintf(stderr,
-			"easytier-cli: acl set: 整段 ACL TOML 需要做 TOML→protobuf 转换，"
-			"当前 C 版未实现；请在 LuCI 界面保存 ACL，或直接改 "
-			"/etc/easytier/config.toml 后重启 core。\n");
-	(void)ctx;
-	return 1;
+	/* 真正的 TOML 子集解析在 etd_cli_acl_toml.c（约 600 行）：
+	 * 支持 [acl.acl_v1] / [[chains]] / [[chains.rules]] / [group] / [[group.declares]]，
+	 * 值支持字符串、整数、布尔、数组（含多行数组），枚举可写数字或枚举名。 */
+	return et_cli_acl_set_apply(ctx, raw);
 }
-
-/* ============ port-forward ============ */
 
 static int parse_socket_addr(const char *s, et_pb *out)
 {

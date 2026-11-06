@@ -575,12 +575,17 @@ int et_cli_req_instance(struct et_cli_ctx *ctx, et_pb *req)
 	et_pb_init(&ident);
 	et_pb_init(&sel);
 	if (ctx->target->have_uuid) {
-		if (et_pb_bytes(&ident, 1, ctx->target->uuid, 24))
+		if (et_pb_bytes(&ident, 1, ctx->target->uuid,
+				ctx->target->uuid_len))
 			goto err;
-	} else {
+	} else if (ctx->target->name[0]) {
 		if (et_pb_str(&sel, 1, ctx->target->name) ||
 		    et_pb_msg(&ident, 2, &sel))
 			goto err;
+	} else {
+		et_pb_free(&ident);
+		et_pb_free(&sel);
+		return 0;
 	}
 	if (et_pb_msg(req, 1, &ident))
 		goto err;
@@ -605,12 +610,18 @@ int et_cli_instance_message(struct et_cli_ctx *ctx, et_pb *out)
 		return 1;
 	}
 	if (ctx->target->have_uuid) {
-		if (et_pb_bytes(&ident, 1, ctx->target->uuid, 24))
+		if (et_pb_bytes(&ident, 1, ctx->target->uuid,
+				ctx->target->uuid_len))
 			goto err;
-	} else {
+	} else if (ctx->target->name[0]) {
 		if (et_pb_str(&sel, 1, ctx->target->name) ||
 		    et_pb_msg(&ident, 2, &sel))
 			goto err;
+	} else {
+		/* 既没有 uuid 也没有名字：不带 selector（上游 selected instance） */
+		et_pb_free(&ident);
+		et_pb_free(&sel);
+		return 1;
 	}
 	*out = ident;
 	et_pb_free(&sel);
@@ -648,6 +659,14 @@ out:
 /* 静默模式：某些命令（proxy 的多域探测）按上游语义忽略 RPC 错误 */
 int et_cli_quiet;
 
+/* 最近一次 RPC 错误的可读文本（供命令拼自己的失败文案） */
+static char et_cli_last_err[256];
+
+const char *et_cli_last_error(void)
+{
+	return et_cli_last_err;
+}
+
 /* 把 RpcResponse.error（error.proto）翻成一句人话 */
 static void et_cli_report_rpc_error(const char *service, unsigned method,
 				    const uint8_t *err, size_t n)
@@ -682,6 +701,11 @@ static void et_cli_report_rpc_error(const char *service, unsigned method,
 			break;
 		}
 	}
+	if (detail[0])
+		snprintf(et_cli_last_err, sizeof(et_cli_last_err), "%s", detail);
+	else
+		snprintf(et_cli_last_err, sizeof(et_cli_last_err), "%s",
+			 kind >= 1 && kind <= 8 ? kinds[kind - 1] : "error");
 	if (et_cli_quiet)
 		return;
 	fprintf(stderr, "easytier-cli: rpc %s/%u failed: %s%s%s\n", service,
@@ -822,9 +846,22 @@ static int list_instance_uuids(struct et_cli_ctx *ctx, et_pb *resp)
 	return 0;
 }
 
+/* 比较两条 UUID 消息是否指向同一个 UUID（解析成 4 个 uint32 再比） */
+static int uuid_same(const uint8_t *a, size_t an, const uint8_t *b, size_t bn)
+{
+	uint64_t pa[4] = { 0, 0, 0, 0 }, pb[4] = { 0, 0, 0, 0 };
+
+	for (unsigned i = 0; i < 4; i++) {
+		(void)et_pb_get_u64(a, an, i + 1, &pa[i]);
+		(void)et_pb_get_u64(b, bn, i + 1, &pb[i]);
+	}
+	return pa[0] == pb[0] && pa[1] == pb[1] && pa[2] == pb[2] &&
+	       pa[3] == pb[3];
+}
+
 /* WebClientService/8 ListNetworkInstanceMeta -> 实例名 */
 static int lookup_instance_name(struct et_cli_ctx *ctx, const uint8_t *uuid,
-				char *out, size_t cap)
+				size_t uuid_len, char *out, size_t cap)
 {
 	et_pb req, list, resp;
 	et_pb_rd r;
@@ -841,7 +878,7 @@ static int lookup_instance_name(struct et_cli_ctx *ctx, const uint8_t *uuid,
 	/* ListNetworkInstanceMetaRequest { repeated UUID inst_ids = 1 }：
 	 * UUID 本身就是一条消息字节，直接作为 field 1 写入，别再套一层。 */
 	(void)list;
-	if (et_pb_bytes(&req, 1, uuid, 24))
+	if (et_pb_bytes(&req, 1, uuid, uuid_len))
 		goto out;
 	/* ListNetworkInstanceMetaRequest{ repeated UUID inst_ids = 1 } 是包装层，
 	 * 实际调用还要带上 {2:…,3:…}，这里直接手工拼一层。 */
@@ -857,9 +894,9 @@ static int lookup_instance_name(struct et_cli_ctx *ctx, const uint8_t *uuid,
 
 		if (f != 1 || w != 2)
 			continue;
-		if (!et_pb_find(b, n, 1, 2, NULL, &id, &idlen) || idlen != 24)
+		if (!et_pb_find(b, n, 1, 2, NULL, &id, &idlen) || !idlen)
 			continue;
-		if (memcmp(id, uuid, 24))
+		if (!uuid_same(id, idlen, uuid, uuid_len))
 			continue;
 		et_pb_get_str(b, n, 4, name, sizeof(name));
 		et_pb_get_str(b, n, 2, netname, sizeof(netname));
@@ -889,7 +926,7 @@ void et_fmt_uuid(const uint8_t *msg, size_t n, char *out, size_t cap)
 		 ((unsigned long long)(p[2] & 0xffff) << 32) | p[3]);
 }
 
-int et_parse_uuid(const char *s, uint8_t out[24])
+int et_parse_uuid(const char *s, uint8_t *out, size_t cap)
 {
 	uint64_t hi[2] = { 0, 0 };
 	int nib = 0;
@@ -927,11 +964,18 @@ int et_parse_uuid(const char *s, uint8_t out[24])
 		et_pb_init(&b);
 		for (unsigned i = 0; i < 4; i++)
 			(void)et_pb_uint(&b, i + 1, part[i]);
-		if (b.len == 24)
-			memcpy(out, b.p, 24);
-		et_pb_free(&b);
+		if (b.len == 0 || b.len > cap) {
+			et_pb_free(&b);
+			return -1;
+		}
+		memcpy(out, b.p, b.len);
+		{
+			size_t n = b.len;
+
+			et_pb_free(&b);
+			return (int)n;
+		}
 	}
-	return 0;
 }
 
 void et_cli_free_targets(struct et_cli_target *t, int n)
@@ -954,8 +998,15 @@ int et_cli_resolve_targets(struct et_cli_ctx *ctx,
 		if (!arr)
 			return -1;
 		if (ctx->opts.instance_id) {
-			if (et_parse_uuid(ctx->opts.instance_id, arr[0].uuid))
-				goto fail;
+			{
+				int l = et_parse_uuid(ctx->opts.instance_id,
+						      arr[0].uuid,
+						      sizeof(arr[0].uuid));
+
+				if (l < 0)
+					goto fail;
+				arr[0].uuid_len = l;
+			}
 			arr[0].have_uuid = 1;
 			snprintf(arr[0].id_str, sizeof(arr[0].id_str), "%s",
 				 ctx->opts.instance_id);
@@ -989,7 +1040,8 @@ int et_cli_resolve_targets(struct et_cli_ctx *ctx,
 
 		et_pb_rd_init(&r, resp.p, resp.len);
 		while (et_pb_next(&r, &f, &w, &v, &b, &n2) > 0) {
-			if (f != 1 || w != 2 || n2 != 24)
+			if (f != 1 || w != 2 || n2 == 0 ||
+			    n2 > sizeof(arr[0].uuid))
 				continue;
 			if (n >= cap) {
 				int nc = cap ? cap * 2 : 4;
@@ -1002,30 +1054,26 @@ int et_cli_resolve_targets(struct et_cli_ctx *ctx,
 				cap = nc;
 			}
 			memset(&arr[n], 0, sizeof(arr[n]));
-			memcpy(arr[n].uuid, b, 24);
+			memcpy(arr[n].uuid, b, n2);
+			arr[n].uuid_len = (int)n2;
 			arr[n].have_uuid = 1;
-			{
-				et_pb_rd r2;
-				unsigned f2, w2;
-				uint64_t v2;
-
-				et_pb_rd_init(&r2, b, 24);
-				while (et_pb_next(&r2, &f2, &w2, &v2, NULL,
-						  NULL) > 0)
-					;
-			}
-			et_fmt_uuid(b, 24, arr[n].id_str,
+			et_fmt_uuid(b, n2, arr[n].id_str,
 				    sizeof(arr[n].id_str));
-			(void)lookup_instance_name(ctx, b, arr[n].name,
+			(void)lookup_instance_name(ctx, b, n2, arr[n].name,
 						   sizeof(arr[n].name));
 			n++;
 		}
 	}
 	et_pb_free(&resp);
 	if (n == 0) {
+		/* 上游 fanout_targets() 在拿不到实例列表时返回 None，
+		 * 退化成"单个、不带 selector 的 selected instance" */
 		free(arr);
-		fprintf(stderr, "no running instances found\n");
-		return -1;
+		arr = calloc(1, sizeof(*arr));
+		if (!arr)
+			return -1;
+		*out = arr;
+		return 1;
 	}
 	/* 按 label 排序（上游 targets.sort_by_key(label)） */
 	for (int i = 1; i < n; i++) {

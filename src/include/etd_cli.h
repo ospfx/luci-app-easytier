@@ -85,12 +85,15 @@ void et_json_null(et_json *j, const char *key);
 
 /* 静默 RPC 错误（proxy 多域探测等场景按上游语义忽略错误） */
 extern int et_cli_quiet;
+/* 最近一次 RPC 错误详情（空串表示没有） */
+const char *et_cli_last_error(void);
 
 /* ---------------- RPC 会话 ---------------- */
 #include "etd_rpc.h"
 
 struct et_cli_target { /* 一个待查询的网络实例 */
-	uint8_t uuid[24]; /* instance uuid（全 0 表示不指定） */
+	uint8_t uuid[32]; /* instance UUID 消息字节（长度可变，proto 里是 4 个 uint32） */
+	int uuid_len;
 	int have_uuid;
 	char id_str[40];  /* 规范 UUID 字符串 */
 	char name[128];   /* 实例名，可能为空 */
@@ -179,7 +182,8 @@ void et_fmt_url(const uint8_t *msg, size_t n, char *out, size_t cap);
 /* common.UUID(4×u32) -> 规范 UUID 字符串 */
 void et_fmt_uuid(const uint8_t *msg, size_t n, char *out, size_t cap);
 /* 解析规范 UUID 字符串 -> 24 字节 common.UUID 编码 */
-int et_parse_uuid(const char *s, uint8_t out[24]);
+/* 解析 UUID 字符串，写入序列化后的 UUID 消息；返回字节数，失败 -1 */
+int et_parse_uuid(const char *s, uint8_t *out, size_t cap);
 
 /* ---------------- 子命令 ----------------
  * 每个实现文件只依赖本头文件；新增子命令时在这里登记。
@@ -195,6 +199,8 @@ int et_cli_peer_center(struct et_cli_ctx *ctx, int argc, char **argv);
 int et_cli_vpn_portal(struct et_cli_ctx *ctx, int argc, char **argv);
 int et_cli_proxy(struct et_cli_ctx *ctx, int argc, char **argv);
 int et_cli_acl(struct et_cli_ctx *ctx, int argc, char **argv);
+/* acl set：解析 ACL TOML（或 @file）→ acl.Acl → ConfigRpc patch；返回 0 成功 */
+int et_cli_acl_set_apply(struct et_cli_ctx *ctx, const char *raw);
 int et_cli_port_forward(struct et_cli_ctx *ctx, int argc, char **argv);
 int et_cli_whitelist(struct et_cli_ctx *ctx, int argc, char **argv);
 int et_cli_stats(struct et_cli_ctx *ctx, int argc, char **argv);
