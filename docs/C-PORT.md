@@ -299,6 +299,28 @@ if (!v || !*v) {
 2. **"假 easytier-core" 的集成测试**。CI 只能验证编译与包内容；"启动 → 写 firewall UCI →
    reload → 停止清理"仍然只能真机手工验证。
 
+### 守护进程生命周期真机验证结果（2026-11-06，测试路由 10.0.15.254）
+
+在测试路由上完整跑过一遍（core 用 2.7.0 与 2.6.4 各一轮）：
+
+| 场景 | 结果 |
+| --- | --- |
+| 从旧版升级（apk 把 /etc 当 conffile，新 init.d 落成 .apk-new） | uci-defaults 迁移把新脚本换上并启动服务 ✔ |
+| `/etc/init.d/easytier start` | 拉起 easytierd + core，写 pidfile/children，建 tun、写 firewall、netifd 接口 up ✔ |
+| `status` | 退出码 0/3 正确，输出 running/stopped ✔ |
+| `reload` | core 重启（pid 变化）✔ |
+| `kill -9` core | 监督进程 5 秒后重新拉起（pid 变化）✔ |
+| `stop` | 监督进程、core、pidfile、children 全部清掉；**用户手工启动的另一个 core（不同路径）不受影响** ✔ |
+| 2.6.4 core | `--socket-mark / --tcp-stun-servers / --vpn-portal-client` 被门控跳过并写日志，core 正常启动 ✔ |
+| 2.7.0 core | 上述参数正常出现在命令行 ✔ |
+| 包内 config.toml | 通过 2.6.4 与 2.7.0 的 `--check-config` ✔ |
+
+**已知未修**：日志轮转用"原地截断 + 重写最后 500 行"，但 core 进程持有的日志 fd 偏移
+不会跟着回退（截断后仍从旧偏移写），结果是文件变稀疏、大小仍维持在旧值附近，起不到
+限容作用。旧 shell 实现（`echo " " > /tmp/easytier.log`）有同样问题，属历史设计缺陷。
+正确做法是改成"父进程持有管道 → 读出来自己写文件"（轮转时由父进程 lseek/ftruncate），
+改动约 100 行，放在 super.c 的循环里，待后续处理。
+
 ### acl set（2026-11-06 补实现）
 
 `src/lib/etd_cli_acl_toml.c`（约 700 行）实现了 TOML 子集解析 + `acl.Acl` 编码：
