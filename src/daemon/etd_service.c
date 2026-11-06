@@ -943,6 +943,18 @@ int et_service_stop(void)
 	}
 	et_unlink(ET_CHILDFILE);
 
+	/* pidfile 竞态兜底：按 exe 精确匹配清理其它 easytierd 监督进程
+	 * （例如 reload 刚 fork 出来还没写 pidfile 的那个） */
+	{
+		char self[512];
+		ssize_t n = readlink("/proc/self/exe", self, sizeof(self) - 1);
+
+		if (n > 0) {
+			self[n] = 0;
+			et_proc_terminate_exe(self, 3000);
+		}
+	}
+
 	et_proc_terminate("easytier_check", 2000);
 
 	et_uci *u = et_uci_open();
@@ -971,8 +983,18 @@ bool et_service_running(void)
 {
 	if (et_pidfile_alive(ET_PIDFILE))
 		return true;
-	if (et_proc_running("easytier-core"))
-		return true;
+	/* 只认"本 daemon 的监督进程"，不能拿任意 easytier-core 判断：
+	 * 用户可能手工跑着另一个 core（不同路径），那只说明网络在跑、不是服务在跑。 */
+	{
+		char self[512];
+		ssize_t n = readlink("/proc/self/exe", self, sizeof(self) - 1);
+
+		if (n > 0) {
+			self[n] = 0;
+			if (et_proc_find_exe(self, NULL))
+				return true;
+		}
+	}
 	if (et_proc_running("easytier-web"))
 		return true;
 	return false;

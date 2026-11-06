@@ -365,8 +365,6 @@ bool et_pidfile_alive(const char *path)
 }
 
 /* 按 /proc/<pid>/exe 精确匹配终止（避免按名字误杀手工启动的其它 core） */
-pid_t *et_proc_find_exe(const char *exe_path, size_t *n);
-
 pid_t *et_proc_find_exe(const char *exe_path, size_t *n)
 {
 	DIR *d;

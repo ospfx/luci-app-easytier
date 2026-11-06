@@ -20,6 +20,8 @@ pid_t et_proc_pid_comm(const char *comm);
 int et_proc_terminate(const char *name, int grace_ms);
 /* 只终止 /proc/<pid>/exe 指向 exe_path 的进程（grace_ms 后 SIGKILL） */
 int et_proc_terminate_exe(const char *exe_path, int grace_ms);
+/* 按 /proc/<pid>/exe 精确匹配查找进程（n 可为 NULL） */
+pid_t *et_proc_find_exe(const char *exe_path, size_t *n);
 /* 读 /proc/<pid>/status 的 VmRSS，单位 KB */
 int et_proc_rss_kb(pid_t pid, long *kb);
 /* 读 /proc/<pid>/cmdline，空格替换 NUL */

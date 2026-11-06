@@ -338,6 +338,9 @@ int et_super_run(et_cfg *c, pid_t core_pid, pid_t web_pid)
 	s.slots[1].start_at = time(NULL);
 	s.slots[1].wanted = web_pid > 0;
 
+	/* 初始子进程也要落到 children 文件，stop 才能只杀自己人 */
+	et_sup_write_children(&s);
+
 	/* 阻塞相关信号，用 sigtimedwait 同步取信号：
 	 * 这样 waitpid 不会被信号处理函数打断，也不存在 handler 与主循环的竞态。 */
 	sigset_t set, old;
