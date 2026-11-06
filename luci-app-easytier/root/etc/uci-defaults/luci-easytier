@@ -1,4 +1,24 @@
 #!/bin/sh
+#
+# 首次安装/升级后的收尾。
+#
+# 背景（2026-11-06 真机发现）：apk 把 /etc 下所有文件都按 conffile 处理，
+# 从旧版（Lua 实现，opkg 时代）升级上来时 /etc/init.d/easytier 仍是旧脚本，
+# 新脚本被放成 /etc/init.d/easytier.apk-new，服务仍按旧 shell 逻辑启动
+# （旧逻辑会把空的 --default-protocol 传给 core，导致 core 起不来）。
+# 这里检测到旧脚本后：先停旧服务，再用 .apk-new 覆盖，最后交给
+# default_postinst 的 "启动 filelist 里的 init.d" 逻辑拉起新服务。
+
+if [ -f /etc/init.d/easytier ] && ! grep -q 'easytierd' /etc/init.d/easytier 2>/dev/null; then
+	/etc/init.d/easytier stop >/dev/null 2>&1
+	# 旧版是 procd 服务：把 procd 里的旧实例摘掉，否则它可能继续 respawn 旧 core
+	ubus call service delete '{"name":"easytier"}' >/dev/null 2>&1
+	if [ -f /etc/init.d/easytier.apk-new ]; then
+		mv -f /etc/init.d/easytier.apk-new /etc/init.d/easytier
+	fi
+	chmod 0755 /etc/init.d/easytier
+fi
+rm -f /etc/init.d/easytier.apk-new
 
 uci -q batch <<-EOF >/dev/null
 	delete ucitrack.@easytier[-1]

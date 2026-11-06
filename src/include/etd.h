@@ -68,6 +68,8 @@
 #define ET_UP_DIR "/tmp/easytier_extract"
 #define ET_LOCK_RELOAD "/var/lock/easytier_reload.lock"
 #define ET_PIDFILE "/var/run/easytierd.pid"
+/* 监督进程写下的子进程 pid（stop 时只杀自己的子进程，避免误杀手工起的 core） */
+#define ET_CHILDFILE "/var/run/easytierd.children"
 
 /* ---- 与原实现一致的常量 ---- */
 #define ET_LOG_MAX_KB 5120

@@ -587,9 +587,10 @@ static pid_t et_start_et(et_cfg *c, et_uci *u)
 		et_log_to(ET_LOG_CORE, "%s当前版本号-%s", bin, ver);
 	free(ver);
 
-	/* 启动前杀掉残留：旧看门狗脚本与旧 core（升级/重启场景） */
+	/* 启动前杀掉残留：旧看门狗脚本与**本服务配置的** core 二进制
+	 * （按 /proc/pid/exe 精确匹配，不会误杀用户手工起的其它路径 core） */
 	et_proc_terminate("easytier_check", 2000);
-	et_proc_terminate("easytier-core", 3000);
+	et_proc_terminate_exe(bin, 3000);
 
 	const char *etcmd = cfg_or(c, "etcmd", "etcmd");
 	et_fw_ports ports;
@@ -727,8 +728,12 @@ static void et_teardown(et_uci *u)
 	bool web_off = !web || strcmp(web, "1") != 0;
 
 	if (core_off) {
+		char *bin = et_uci_get_et(u, "easytierbin");
+
 		et_proc_terminate("easytier_check", 2000);
-		et_proc_terminate("easytier-core", 3000);
+		et_proc_terminate_exe(bin && *bin ? bin : ET_PATH_CORE_DEF,
+				      3000);
+		free(bin);
 		et_net_cleanup_all();
 		et_remove_temp_files();
 		et_log_to(ET_LOG_CORE, "easytier-core 停止运行");
@@ -909,13 +914,46 @@ int et_service_stop(void)
 	}
 	et_unlink(ET_PIDFILE);
 
-	/* 监督进程已经把子进程带走；这里再兜一次，处理旧版本残留/监督进程被 KILL 的情况 */
+	/* 监督进程会把子进程带走；这里补齐：
+	 *   1) 按监督进程写下的 children 清单（只杀自己的子进程）；
+	 *   2) 再按配置的二进制路径兜底（监督进程被 KILL 的情况）；
+	 * 绝不能按进程名杀 —— 会误杀用户手工启动、路径不同的 core。 */
+	{
+		char *kids = et_read_file(ET_CHILDFILE, NULL);
+
+		if (kids && *kids) {
+			char *save = NULL, *tok;
+
+			for (tok = strtok_r(kids, " \n", &save); tok;
+			     tok = strtok_r(NULL, " \n", &save)) {
+				pid_t k = (pid_t)strtol(tok, NULL, 10);
+
+				bool alive = k > 1 &&
+					     kill(k, 0) == 0;
+
+				if (alive) {
+					kill(k, SIGTERM);
+					usleep(100 * 1000);
+					if (kill(k, 0) == 0)
+						kill(k, SIGKILL);
+				}
+			}
+		}
+		free(kids);
+	}
+	et_unlink(ET_CHILDFILE);
+
 	et_proc_terminate("easytier_check", 2000);
-	et_proc_terminate("easytier-core", 3000);
-	et_proc_terminate("easytier-web", 3000);
 
 	et_uci *u = et_uci_open();
 	if (u) {
+		char *cb = et_uci_get_et(u, "easytierbin");
+		char *wb = et_uci_get_et(u, "webbin");
+
+		et_proc_terminate_exe(cb && *cb ? cb : ET_PATH_CORE_DEF, 3000);
+		et_proc_terminate_exe(wb && *wb ? wb : ET_PATH_WEB_DEF, 3000);
+		free(cb);
+		free(wb);
 		et_teardown(u);
 		et_uci_close(u);
 	}

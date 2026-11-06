@@ -311,6 +311,32 @@ if (!v || !*v) {
 - 语义：整份替换、空 ACL 报错、多实例逐个下发、JSON 回显时 `group_secret` 打码；
 - 未支持：上游的 JSON 输入形态（PatchConfigRequest / {acl:...} / Acl 本体），会按 TOML 解析失败报错。
 
+### 守护进程生命周期（2026-11-06 真机验证并修复）
+
+真机（测试路由）跑 `/etc/init.d/easytier start/status/reload/stop` 时发现并修掉三个问题：
+
+1. **init.d 设了 `USE_PROCD=1` 但没注册 procd 实例**：rc.common 会在 source 脚本后
+   重新定义 start/stop/reload 覆盖掉脚本里的函数 ——
+   - start 侥幸能用（走 start_service）；
+   - **stop 变成 procd_kill，对 easytierd 完全无效**（服务停不下来）；
+   - **reload 变成 "没有 reload_service 就 start"**，永远不会重启（实测 reload 后 core pid 不变）。
+   已改为不使用 USE_PROCD、定义 `start_service/stop_service/reload_service/status`，
+   由 rc.common 的非 procd 分发直接调用。
+2. **stop 按进程名杀 easytier-core**：会把用户手工启动、路径不同的 core 一起杀掉
+   （实测把测试路由上 15888 的 8 节点 core 杀了）。已改为：
+   监督进程把子进程 pid 写到 `/var/run/easytierd.children`，stop 先按清单杀；
+   兜底也只按 `/proc/<pid>/exe == 配置的 easytierbin` 精确匹配。
+3. 旧版是 procd 服务，升级后 procd 里可能残留旧实例并 respawn 旧 core；
+   迁移脚本里补了 `ubus call service delete '{"name":"easytier"}'`。
+
+### 升级路径（2026-11-06 真机发现并修复）
+
+- apk 把 `/etc` 下所有文件当 conffile：从旧版（opkg/Lua）升级时
+  `/etc/init.d/easytier` 不会被覆盖，新脚本落成 `easytier.apk-new`，
+  结果**服务仍按旧 shell 逻辑启动**（旧逻辑会输出空的 `--default-protocol`，core 直接报错退出）。
+  已在 `/etc/uci-defaults/luci-easytier` 里加迁移：检测旧脚本 → 停旧服务 →
+  用 `.apk-new` 覆盖 → 交回 default_postinst 启动新脚本。
+
 ### 真机未覆盖的路径
 
 - 守护进程生命周期（`easytierd service start/stop/reload`、firewall UCI、TUN、watchdog、

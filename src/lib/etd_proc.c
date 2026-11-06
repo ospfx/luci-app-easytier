@@ -363,3 +363,91 @@ bool et_pidfile_alive(const char *path)
 {
 	return et_pid_alive(et_pidfile_read(path));
 }
+
+/* 按 /proc/<pid>/exe 精确匹配终止（避免按名字误杀手工启动的其它 core） */
+pid_t *et_proc_find_exe(const char *exe_path, size_t *n);
+
+pid_t *et_proc_find_exe(const char *exe_path, size_t *n)
+{
+	DIR *d;
+	struct dirent *e;
+	pid_t *v = NULL;
+	size_t cnt = 0, cap = 0;
+	pid_t self = getpid();
+	char real[512];
+	char target[512];
+
+	if (!exe_path || !*exe_path)
+		return NULL;
+	if (!realpath(exe_path, real))
+		snprintf(real, sizeof(real), "%s", exe_path);
+
+	d = opendir("/proc");
+	if (!d)
+		return NULL;
+	while ((e = readdir(d))) {
+		char link[64];
+		ssize_t l;
+		pid_t pid;
+
+		if (!isdigit((unsigned char)e->d_name[0]))
+			continue;
+		pid = (pid_t)strtol(e->d_name, NULL, 10);
+		if (pid <= 1 || pid == self)
+			continue;
+		snprintf(link, sizeof(link), "/proc/%d/exe", (int)pid);
+		l = readlink(link, target, sizeof(target) - 1);
+		if (l <= 0)
+			continue;
+		target[l] = 0;
+		if (strcmp(target, real))
+			continue;
+		if (et_pid_push(&v, &cnt, &cap, pid) < 0)
+			break;
+	}
+	closedir(d);
+	if (cnt == 0) {
+		free(v);
+		return NULL;
+	}
+	if (n)
+		*n = cnt;
+	return v;
+}
+
+int et_proc_terminate_exe(const char *exe_path, int grace_ms)
+{
+	size_t n = 0;
+	pid_t *v = et_proc_find_exe(exe_path, &n);
+	int rc = ET_OK;
+
+	if (!v || n == 0) {
+		free(v);
+		return ET_ENOENT;
+	}
+	for (size_t i = 0; i < n; i++)
+		kill(v[i], SIGTERM);
+	if (grace_ms < 0)
+		grace_ms = 0;
+	for (int waited = 0; waited < grace_ms; waited += 20) {
+		bool any = false;
+
+		for (size_t i = 0; i < n; i++) {
+			if (et_pid_alive(v[i])) {
+				any = true;
+				break;
+			}
+		}
+		if (!any)
+			break;
+		usleep(20 * 1000);
+	}
+	for (size_t i = 0; i < n; i++) {
+		if (et_pid_alive(v[i])) {
+			kill(v[i], SIGKILL);
+			rc = ET_OK;
+		}
+	}
+	free(v);
+	return rc;
+}

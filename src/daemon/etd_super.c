@@ -47,6 +47,8 @@ struct et_sup {
 	time_t next_rotate;
 };
 
+static void et_sup_write_children(struct et_sup *s);
+
 /* 原地截断：保留最后 keep_lines 行。
  *
  * 不能用 et_log_rotate()：它是 tmp + rename，正在写日志的 core/web 进程持有的
@@ -160,12 +162,35 @@ static void et_sup_reap(struct et_sup *s, bool shutdown)
 				continue;
 			if (shutdown) {
 				sl->pid = 0;
+				et_sup_write_children(s);
 				break;
 			}
 			et_slot_died(sl, status);
+			et_sup_write_children(s);
 			break;
 		}
 	}
+}
+
+/* 把当前子进程 pid 写到 ET_CHILDFILE：stop 时先按这份清单杀，避免按名字误杀 */
+static void et_sup_write_children(struct et_sup *s)
+{
+	char buf[128];
+	int off = 0;
+
+	for (size_t i = 0; i < sizeof(s->slots) / sizeof(s->slots[0]); i++) {
+		if (s->slots[i].pid <= 0)
+			continue;
+		off += snprintf(buf + off, sizeof(buf) - (size_t)off, "%d ",
+				(int)s->slots[i].pid);
+		if ((size_t)off >= sizeof(buf))
+			break;
+	}
+	if (off == 0) {
+		unlink(ET_CHILDFILE);
+		return;
+	}
+	et_write_file(ET_CHILDFILE, buf, (size_t)off);
 }
 
 static void et_sup_spawn(struct et_sup *s, struct et_slot *sl)
@@ -176,6 +201,7 @@ static void et_sup_spawn(struct et_sup *s, struct et_slot *sl)
 	if (pid > 0) {
 		sl->pid = pid;
 		sl->start_at = now;
+		et_sup_write_children(s);
 		return;
 	}
 
