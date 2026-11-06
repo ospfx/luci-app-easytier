@@ -165,7 +165,7 @@ jobs:
 
             | 包 | 内容 |
             | --- | --- |
-            | `easytierd-2.7.0-r1.apk` | C 后端：`/usr/sbin/easytierd`（守护进程）+ `/usr/sbin/easytierctl`（管理 CLI） |
+            | `easytierd-2.7.0-r1.apk` | C 后端：`/usr/sbin/easytierd`（守护进程）+ `/usr/bin/easytier-cli`（与上游同名的管理 CLI，17 个子命令全部 C 实现） |
             | `luci-app-easytier-2.7.0-r1.apk` | LuCI 界面：菜单、6 个页面模板、`/etc/init.d/easytier`、UCI 默认配置、rpcd ACL、i18n |
             | `luci-i18n-easytier-zh-cn-2.7.0.apk` | 简体中文语言包 |
 

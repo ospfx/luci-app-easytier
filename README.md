@@ -9,7 +9,7 @@
 OpenWrt LuCI 界面，用于管理 [EasyTier](https://github.com/EasyTier/EasyTier) —— 一个简单、安全、去中心化的内网穿透 VPN 组网方案。
 
 > **当前 `main` 分支是 C 后端重写版。** 进程守护、配置读写、防火墙编排、下载安装、状态采集全部由 C 实现
-> （`/usr/sbin/easytierd`、`/usr/sbin/easytierctl`），LuCI 侧只保留一层 129 行的极薄转发壳。
+> （`/usr/sbin/easytierd`、`/usr/sbin/easytier-cli`），LuCI 侧只保留一层 129 行的极薄转发壳。
 > 旧的 Lua + Shell 实现在分支 [`legacy/lua`](../../tree/legacy/lua)，两者的逐项对照见 [docs/C-PORT.md](docs/C-PORT.md)。
 
 ## UI 预览
@@ -38,7 +38,7 @@ OpenWrt LuCI 界面，用于管理 [EasyTier](https://github.com/EasyTier/EasyTi
 flowchart LR
     B["浏览器<br/>ES5 + XMLHttpRequest"] -->|HTTP| U["uhttpd"]
     U --> L["LuCI Lua1<br/>controller/easytier.lua<br/>129 行：菜单 + 转发"]
-    L -->|"sys.exec:<br/>easytierctl api &lt;method&gt; k=v..."| C["easytierctl<br/>/usr/sbin/easytierctl"]
+    L -->|"sys.exec:<br/>easytier-cli api &lt;method&gt; k=v..."| C["easytier-cli<br/>/usr/sbin/easytier-cli"]
     C -->|"同一套 handler<br/>路由表 et_routes[]"| D["easytierd<br/>/usr/sbin/easytierd"]
     D -->|"UCI / sync / kill"| F[("/etc/config/easytier<br/>/etc/easytier/config.toml")]
     D -->|fork + exec| E["easytier-core<br/>（+ easytier-web-embed）"]
@@ -48,7 +48,7 @@ flowchart LR
 ```
 浏览器
   └─ uhttpd ──> LuCI（Lua1，只有菜单注册与请求转发）
-                   └─ sys.exec("easytierctl api <method> ...")
+                   └─ sys.exec("easytier-cli api <method> ...")
                         └─ easytierd 的 handler（src/api/*.c，共 28 条路由）
                              ├─ 读/写 UCI（libuci）
                              ├─ 扫描 /proc、读 sysfs（状态、进程、CPU、内存）
@@ -59,8 +59,8 @@ flowchart LR
 一次点击的完整路径（以保存配置为例）：
 
 1. 浏览器把表单 POST 到 `/cgi-bin/luci/admin/vpn/easytier/config_save`；
-2. `easytier.lua` 不解析业务字段，直接把请求体/表单拼成 `key=value`，调用 `easytierctl api config_save ...`；
-3. `easytierctl` 在进程内调用 `et_api_config_save()`（与 ubus、daemon 内部调用是同一套 handler）；
+2. `easytier.lua` 不解析业务字段，直接把请求体/表单拼成 `key=value`，调用 `easytier-cli api config_save ...`；
+3. `easytier-cli` 在进程内调用 `et_api_config_save()`（与 ubus、daemon 内部调用是同一套 handler）；
 4. handler 按 schema 校验并写回 `/etc/config/easytier`；
 5. 需要重启时，由 `toggle_*` / `restart_service` 这类接口把动作丢给脱离会话的子进程，接口立刻返回。
 
@@ -69,14 +69,14 @@ flowchart LR
 - **一条命令行的唯一事实来源是 `src/lib/etd_schema.c` 的 `et_schema[]`（120 条）**，它同时驱动 UCI 读取、argv 拼装、表单渲染和 `/schema` 接口；
 - **路由名与原 Lua 端点逐字一致**（`api_status`、`get_log`、`download_easytier` …），所以旧前端模板一行不改就能用；
 - **进程监督从 procd 移到 daemon 内**：`easytierd service run` 自己负责 respawn（1 小时窗口内最多 20 次、间隔 5 秒）、60 秒日志轮转、checkip 看门狗与信号级联；
-- **ubus 对象尚未实现**，当前所有调用都走 `easytierctl exec` 这条路径（见 [docs/C-PORT.md](docs/C-PORT.md#5-尚未完成与待验证)）。
+- **ubus 对象尚未实现**，当前所有调用都走 `easytier-cli exec` 这条路径（见 [docs/C-PORT.md](docs/C-PORT.md#5-尚未完成与待验证)）。
 
 ## 📦 两个包
 
 | 包 | 内容 | 作用 | 依赖 |
 | --- | --- | --- | --- |
-| `easytierd` | `/usr/sbin/easytierd`、`/usr/sbin/easytierctl` | **C 后端**：进程守护、配置模型、防火墙/接口编排、状态采集、日志、上传下载安装、i18n 字典加载 | `libuci` `libjson-c` |
-| `luci-app-easytier` | `luasrc/controller/easytier.lua`、6 个 HTM 模板、`/etc/init.d/easytier`（24 行）、UCI 默认配置、rpcd ACL、i18n JSON | **UI 与桥接层**：菜单、页面模板、把请求转发给 `easytierctl` | `+kmod-tun` `+luci-compat` **`+easytierd`** |
+| `easytierd` | `/usr/sbin/easytierd`、`/usr/sbin/easytier-cli` | **C 后端**：进程守护、配置模型、防火墙/接口编排、状态采集、日志、上传下载安装、i18n 字典加载 | `libuci` `libjson-c` |
+| `luci-app-easytier` | `luasrc/controller/easytier.lua`、6 个 HTM 模板、`/etc/init.d/easytier`（24 行）、UCI 默认配置、rpcd ACL、i18n JSON | **UI 与桥接层**：菜单、页面模板、把请求转发给 `easytier-cli` | `+kmod-tun` `+luci-compat` **`+easytierd`** |
 
 `luci-app-easytier` 强依赖 `easytierd`：少了它界面能打开但所有接口都会失败。包管理器会解析这个依赖，
 但如果你是把 ipk 手动 `scp` 上去再逐个装，请按 `easytierd` → （可选的 `easytier` 核心包）→ `luci-app-easytier` 的顺序。
@@ -203,7 +203,7 @@ opkg install kmod-tun
 
 1. 直接覆盖安装即可：`/etc/config/easytier` 与 `/etc/easytier/` 都在 `conffiles` 里，
    升级不会覆盖你的配置；`prerm` 还会把两份配置备份到 `/tmp/easytier_backup`、`/tmp/et_config_backup`，`postinst` 自动恢复。
-2. **先装 `easytierd` 再装 `luci-app-easytier`**，否则界面会因为找不到 `easytierctl` 而所有接口报错。
+2. **先装 `easytierd` 再装 `luci-app-easytier`**，否则界面会因为找不到 `easytier-cli` 而所有接口报错。
 3. 首次启动会补齐必要默认值：`web_enabled`、`easytierbin`、`webbin` 缺失时会被写回配置（由 daemon 启动路径负责）。
    注意区分两类"默认值"：schema 里的 61 条 `.def` **不会**因为启动就被写进 UCI；
    而表单里显示的初值（`listenermode=ON`、`tcp_port=11010` 等）会在你**点保存**时落库，因为它们与当前 UCI 值不同。
@@ -219,16 +219,16 @@ opkg install kmod-tun
 `easytierd` 没装或没执行权限：
 
 ```bash
-ls -l /usr/sbin/easytierd /usr/sbin/easytierctl
-easytierctl doctor      # 环境自检：UCI、二进制、架构、外部工具、磁盘、进程
+ls -l /usr/sbin/easytierd /usr/sbin/easytier-cli
+easytier-cli doctor      # 环境自检：UCI、二进制、架构、外部工具、磁盘、进程
 ```
 
 ### 单个接口想看原始返回
 
 ```bash
-easytierctl api api_status
-easytierctl api get_tun_info ifname=tun0
-easytierctl api config_save network_name=mynet network_secret=secret
+easytier-cli api api_status
+easytier-cli api get_tun_info ifname=tun0
+easytier-cli api config_save network_name=mynet network_secret=secret
 /etc/init.d/easytier restart        # 等价于 easytierd service restart
 ```
 

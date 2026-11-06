@@ -1,0 +1,1433 @@
+/*
+ * etd_cli_peer.c - peer / route / node 三个子命令
+ *
+ * 数据全部来自 core 的自研 RPC（PeerManageRpc 1=ListPeer / 3=ListRoute /
+ * 7=ShowNodeInfo），字段映射与排序规则逐条对照上游 easytier-cli 2.7.0
+ * （handle_peer_list / handle_route_list / handle_node，以及
+ *  easytier-proto/src/api.rs 里 PeerRoutePair 的 get_latency_ms 等）。
+ */
+#include "etd_cli.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#define MAX_HOSTNAME 128
+#define PUBLIC_SERVER_PREFIX "PublicServer_"
+#define NODE_LISTENERS 32
+
+/* ===================== NodeInfo ===================== */
+
+struct node_view {
+	int have;
+	uint32_t peer_id;
+	char ipv4_addr[64];
+	char hostname[MAX_HOSTNAME];
+	char version[64];
+	char inst_id[64];
+	char config[4096];
+	char proxy_join[512];
+	char public_ip[8][64];
+	int n_public;
+	uint64_t nat;
+	int have_nat;
+	char listeners[NODE_LISTENERS][128];
+	int listener_idx[NODE_LISTENERS];
+	int n_listeners;
+	char iface_v4[16][24];
+	int n_iface_v4;
+	char iface_v6[16][48];
+	int n_iface_v6;
+};
+
+struct str_join {
+	char *out;
+	size_t cap;
+	size_t len;
+	const char *sep;
+};
+
+static int str_join_cb(const char *s, size_t n, void *ud)
+{
+	struct str_join *c = ud;
+	size_t sl = strlen(c->sep);
+	size_t sn = strlen(s);
+
+	(void)n;
+	if (c->len && c->len + sl + sn + 1 < c->cap) {
+		memcpy(c->out + c->len, c->sep, sl);
+		c->len += sl;
+	}
+	if (c->len + sn + 1 >= c->cap)
+		return 1;
+	memcpy(c->out + c->len, s, sn);
+	c->len += sn;
+	c->out[c->len] = 0;
+	return 0;
+}
+
+static void join_strings(const uint8_t *msg, size_t n, unsigned field,
+			 const char *sep, char *out, size_t cap)
+{
+	struct str_join c;
+
+	c.out = out;
+	c.cap = cap;
+	c.len = 0;
+	c.sep = sep;
+	out[0] = 0;
+	(void)et_pb_foreach_str(msg, n, field, str_join_cb, &c);
+}
+
+/* RFC 5952：IPv6 文本格式（Rust Ipv6Addr Display 同款规则） */
+static void fmt_ipv6_text(const unsigned char bytes[16], char *out, size_t cap)
+{
+	unsigned short g[8];
+	int i, best = -1, bestlen = 0, cur = -1, curlen = 0;
+	size_t o = 0;
+
+	for (i = 0; i < 8; i++)
+		g[i] = (unsigned short)((bytes[i * 2] << 8) | bytes[i * 2 + 1]);
+	for (i = 0; i < 8; i++) {
+		if (g[i] == 0) {
+			if (cur < 0) {
+				cur = i;
+				curlen = 1;
+			} else {
+				curlen++;
+			}
+		} else if (cur >= 0) {
+			if (curlen > bestlen && curlen > 1) {
+				best = cur;
+				bestlen = curlen;
+			}
+			cur = -1;
+			curlen = 0;
+		}
+	}
+	if (cur >= 0 && curlen > bestlen && curlen > 1) {
+		best = cur;
+		bestlen = curlen;
+	}
+	for (i = 0; i < 8; i++) {
+		if (i == best) {
+			if (o + 2 < cap) {
+				out[o++] = ':';
+				out[o++] = ':';
+			}
+			i += bestlen - 1;
+			continue;
+		}
+		if (i > 0 && o > 0 && out[o - 1] != ':' && o + 1 < cap)
+			out[o++] = ':';
+		o += (size_t)snprintf(out + o, cap - o, "%x", g[i]);
+		if (o >= cap)
+			break;
+	}
+	out[o < cap ? o : cap - 1] = 0;
+}
+
+static void fmt_ipv6_addr(const uint8_t *msg, size_t n, char *out, size_t cap)
+{
+	unsigned char bytes[16];
+
+	for (unsigned i = 0; i < 4; i++) {
+		uint64_t v = 0;
+
+		(void)et_pb_get_u64(msg, n, i + 1, &v);
+		bytes[i * 4] = (unsigned char)(v >> 24);
+		bytes[i * 4 + 1] = (unsigned char)(v >> 16);
+		bytes[i * 4 + 2] = (unsigned char)(v >> 8);
+		bytes[i * 4 + 3] = (unsigned char)v;
+	}
+	fmt_ipv6_text(bytes, out, cap);
+}
+
+struct ipv4_list {
+	char (*out)[24];
+	int *n;
+	int cap;
+};
+
+static int ipv4_list_cb(const uint8_t *b, size_t n, void *ud)
+{
+	struct ipv4_list *c = ud;
+	uint64_t addr = 0;
+
+	if (*c->n >= c->cap)
+		return 1;
+	(void)et_pb_get_u64(b, n, 1, &addr);
+	et_fmt_ipv4((uint32_t)addr, c->out[*c->n], 24);
+	(*c->n)++;
+	return 0;
+}
+
+struct ipv6_list {
+	char (*out)[48];
+	int *n;
+	int cap;
+};
+
+static int ipv6_list_cb(const uint8_t *b, size_t n, void *ud)
+{
+	struct ipv6_list *c = ud;
+
+	if (*c->n >= c->cap)
+		return 1;
+	fmt_ipv6_addr(b, n, c->out[*c->n], 48);
+	(*c->n)++;
+	return 0;
+}
+
+struct public_ip_ctx {
+	struct node_view *nv;
+};
+
+static int public_ip_cb(const char *s, size_t n, void *ud)
+{
+	struct public_ip_ctx *c = ud;
+
+	(void)n;
+	if (c->nv->n_public >= 8)
+		return 1;
+	snprintf(c->nv->public_ip[c->nv->n_public], 64, "%s", s);
+	c->nv->n_public++;
+	return 0;
+}
+
+struct listener_ctx {
+	struct node_view *nv;
+	int idx;
+};
+
+static int listener_cb(const char *s, size_t n, void *ud)
+{
+	struct listener_ctx *c = ud;
+	size_t len = strlen(s);
+
+	(void)n;
+	if (c->nv->n_listeners < NODE_LISTENERS) {
+		if (len > 127)
+			len = 127;
+		memcpy(c->nv->listeners[c->nv->n_listeners], s, len);
+		c->nv->listeners[c->nv->n_listeners][len] = 0;
+		c->nv->listener_idx[c->nv->n_listeners] = c->idx;
+		c->nv->n_listeners++;
+	}
+	c->idx++;
+	return 0;
+}
+
+static void node_view_parse(struct node_view *nv, const uint8_t *b, size_t n)
+{
+	memset(nv, 0, sizeof(*nv));
+	nv->have = 1;
+	{
+		uint64_t v = 0;
+
+		if (!et_pb_get_u64(b, n, 1, &v))
+			nv->peer_id = (uint32_t)v;
+	}
+	(void)et_pb_get_str(b, n, 2, nv->ipv4_addr, sizeof(nv->ipv4_addr));
+	(void)et_pb_get_str(b, n, 4, nv->hostname, sizeof(nv->hostname));
+	(void)et_pb_get_str(b, n, 6, nv->inst_id, sizeof(nv->inst_id));
+	(void)et_pb_get_str(b, n, 8, nv->config, sizeof(nv->config));
+	(void)et_pb_get_str(b, n, 9, nv->version, sizeof(nv->version));
+	join_strings(b, n, 3, ", ", nv->proxy_join, sizeof(nv->proxy_join));
+	{
+		const uint8_t *st = NULL;
+		size_t stl = 0;
+
+		if (et_pb_find(b, n, 5, 2, NULL, &st, &stl)) {
+			uint64_t nat = 0;
+
+			if (!et_pb_get_u64(st, stl, 1, &nat)) {
+				nv->nat = nat;
+				nv->have_nat = 1;
+			}
+			{
+				struct public_ip_ctx pc = { nv };
+
+				(void)et_pb_foreach_str(st, stl, 4,
+							public_ip_cb, &pc);
+			}
+		}
+	}
+	{
+		struct listener_ctx lc = { nv, 0 };
+
+		(void)et_pb_foreach_str(b, n, 7, listener_cb, &lc);
+	}
+	{
+		const uint8_t *il = NULL;
+		size_t ill = 0;
+
+		if (et_pb_find(b, n, 11, 2, NULL, &il, &ill)) {
+			struct ipv4_list c4;
+			struct ipv6_list c6;
+
+			c4.out = nv->iface_v4;
+			c4.n = &nv->n_iface_v4;
+			c4.cap = 16;
+			c6.out = nv->iface_v6;
+			c6.n = &nv->n_iface_v6;
+			c6.cap = 16;
+			(void)et_pb_foreach_msg(il, ill, 2, ipv4_list_cb, &c4);
+			(void)et_pb_foreach_msg(il, ill, 4, ipv6_list_cb, &c6);
+		}
+	}
+}
+
+/* ===================== PeerInfo 统计 ===================== */
+
+#define SCAN_LATENCY 0
+#define SCAN_LOSS 1
+#define SCAN_RX 2
+#define SCAN_TX 3
+#define SCAN_PROTOS 4
+
+struct conn_scan {
+	const char *def_id;
+	int want;
+	uint64_t best;
+	int found;
+	double loss;
+	char protos[128];
+};
+
+static float decode_f32(const uint8_t *b)
+{
+	uint32_t u = (uint32_t)b[0] | ((uint32_t)b[1] << 8) |
+		     ((uint32_t)b[2] << 16) | ((uint32_t)b[3] << 24);
+	float f;
+
+	memcpy(&f, &u, sizeof(f));
+	return f;
+}
+
+static int scan_conn_cb(const uint8_t *b, size_t n, void *ud)
+{
+	struct conn_scan *s = ud;
+	char conn_id[64] = "";
+	const uint8_t *st = NULL;
+	size_t stl = 0;
+
+	(void)et_pb_get_str(b, n, 1, conn_id, sizeof(conn_id));
+	if (s->want == SCAN_PROTOS) {
+		const uint8_t *ti = NULL;
+		size_t til = 0;
+		char tt[32] = "";
+		char needle[40];
+		char hay[192];
+
+		if (!et_pb_find(b, n, 5, 2, NULL, &ti, &til))
+			return 0;
+		(void)et_pb_get_str(ti, til, 1, tt, sizeof(tt));
+		if (!tt[0])
+			return 0;
+		snprintf(needle, sizeof(needle), ",%s,", tt);
+		snprintf(hay, sizeof(hay), ",%s,", s->protos);
+		if (!strstr(hay, needle)) {
+			size_t cur = strlen(s->protos);
+
+			if (cur && cur + 2 < sizeof(s->protos))
+				s->protos[cur++] = ',';
+			snprintf(s->protos + cur, sizeof(s->protos) - cur, "%s",
+				 tt);
+		}
+		return 0;
+	}
+	if (!et_pb_find(b, n, 6, 2, NULL, &st, &stl))
+		return 0;
+	if (s->want == SCAN_LATENCY) {
+		uint64_t lat = 0;
+
+		if (!et_pb_find(st, stl, 5, 0, &lat, NULL, NULL))
+			return 0;
+		if (s->def_id && s->def_id[0] && !strcmp(conn_id, s->def_id)) {
+			s->best = lat;
+			s->found = 2;
+			return 1;
+		}
+		if (lat < s->best) {
+			s->best = lat;
+			s->found = 1;
+		}
+	} else if (s->want == SCAN_LOSS) {
+		const uint8_t *lr = NULL;
+		float lf;
+
+		if (!et_pb_find(b, n, 7, 5, NULL, &lr, NULL) || !lr)
+			return 0;
+		lf = decode_f32(lr);
+		if (s->def_id && s->def_id[0] && !strcmp(conn_id, s->def_id)) {
+			s->loss = (double)lf;
+			s->found = 2;
+			return 1;
+		}
+		if (!s->found) {
+			s->loss = (double)lf;
+			s->found = 1;
+		}
+	} else {
+		uint64_t v = 0;
+
+		if (!et_pb_get_u64(st, stl, s->want == SCAN_RX ? 1 : 2, &v))
+			s->best += v;
+		s->found = 1;
+	}
+	return 0;
+}
+
+static void peer_def_conn(const uint8_t *pi, size_t n, char *out, size_t cap)
+{
+	const uint8_t *u = NULL;
+	size_t ul = 0;
+
+	out[0] = 0;
+	if (pi && n && et_pb_find(pi, n, 3, 2, NULL, &u, &ul))
+		et_fmt_uuid(u, ul, out, cap);
+}
+
+static void conn_scan_run(const uint8_t *pi, size_t n, struct conn_scan *s)
+{
+	char def[64];
+
+	if (!pi || !n)
+		return;
+	peer_def_conn(pi, n, def, sizeof(def));
+	s->def_id = def;
+	(void)et_pb_foreach_msg(pi, n, 2, scan_conn_cb, s);
+}
+
+static int peer_latency(const uint8_t *pi, size_t n, double *out)
+{
+	struct conn_scan s;
+
+	memset(&s, 0, sizeof(s));
+	s.want = SCAN_LATENCY;
+	s.best = UINT64_MAX;
+	conn_scan_run(pi, n, &s);
+	if (!s.found || s.best == UINT64_MAX)
+		return 0;
+	*out = (double)(uint32_t)s.best / 1000.0;
+	return 1;
+}
+
+static int peer_loss(const uint8_t *pi, size_t n, double *out)
+{
+	struct conn_scan s;
+
+	memset(&s, 0, sizeof(s));
+	s.want = SCAN_LOSS;
+	conn_scan_run(pi, n, &s);
+	if (!s.found)
+		return 0;
+	*out = s.loss;
+	return 1;
+}
+
+static unsigned long long peer_bytes(const uint8_t *pi, size_t n, int tx)
+{
+	struct conn_scan s;
+
+	memset(&s, 0, sizeof(s));
+	s.want = tx ? SCAN_TX : SCAN_RX;
+	conn_scan_run(pi, n, &s);
+	return s.best;
+}
+
+static void peer_protos(const uint8_t *pi, size_t n, char *out, size_t cap)
+{
+	struct conn_scan s;
+
+	out[0] = 0;
+	memset(&s, 0, sizeof(s));
+	s.want = SCAN_PROTOS;
+	conn_scan_run(pi, n, &s);
+	snprintf(out, cap, "%s", s.protos);
+}
+
+/* ===================== 数据抓取 ===================== */
+
+struct peer_data {
+	struct node_view nv;
+	et_pb peers;  /* ListPeerResponse */
+	et_pb routes; /* ListRouteResponse */
+	struct peer_row *prows;
+	int nprows;
+	struct route_row *rrows;
+	int nrrows;
+};
+
+struct peer_row {
+	char cidr[64];
+	char ipv4[24];
+	char hostname[MAX_HOSTNAME];
+	char cost[24];
+	char lat[24];
+	char loss[24];
+	char rx[32];
+	char tx[32];
+	char tunnel[96];
+	char nat[24];
+	char id[16];
+	char version[64];
+};
+
+/* Join(',') 后的 proxy_cidrs -> 每行一个（上游 format_proxy_cidrs） */
+static void proxy_multiline(const char *joined, char *out, size_t cap)
+{
+	size_t o = 0;
+	const char *p;
+
+	out[0] = 0;
+	if (!joined)
+		return;
+	p = joined;
+	while (*p && o + 2 < cap) {
+		const char *comma = strchr(p, ',');
+		size_t n = comma ? (size_t)(comma - p) : strlen(p);
+		size_t a = 0, b = n;
+
+		while (a < n && (p[a] == ' ' || p[a] == '\t'))
+			a++;
+		while (b > a && (p[b - 1] == ' ' || p[b - 1] == '\t'))
+			b--;
+		if (o && o + 1 < cap)
+			out[o++] = '\n';
+		for (size_t k = a; k < b && o + 1 < cap; k++)
+			out[o++] = p[k];
+		if (!comma)
+			break;
+		p = comma + 1;
+	}
+	out[o] = 0;
+}
+
+struct route_row {
+	int skip;
+	char ipv4[64];
+	char hostname[MAX_HOSTNAME];
+	char proxy[1024];
+	char nh_ipv4[64];
+	char nh_hostname[MAX_HOSTNAME];
+	double nh_lat;
+	long long path_len;
+	long long path_latency;
+	char nh_ipv4_lf[64];
+	char nh_hostname_lf[MAX_HOSTNAME];
+	long long path_len_lf;
+	long long path_latency_lf;
+	char version[64];
+};
+
+static void peer_data_free(struct peer_data *d)
+{
+	et_pb_free(&d->peers);
+	et_pb_free(&d->routes);
+	free(d->prows);
+	free(d->rrows);
+	memset(d, 0, sizeof(*d));
+}
+
+struct find_peer_ctx {
+	uint32_t id;
+	const uint8_t *msg;
+	size_t len;
+};
+
+static int find_peer_cb(const uint8_t *b, size_t n, void *ud)
+{
+	struct find_peer_ctx *c = ud;
+	uint64_t id = 0;
+
+	if (et_pb_get_u64(b, n, 1, &id))
+		return 0;
+	if ((uint32_t)id != c->id)
+		return 0;
+	c->msg = b;
+	c->len = n;
+	return 1;
+}
+
+static int find_peer(const uint8_t *peers, size_t n, uint32_t peer_id,
+		     const uint8_t **msg, size_t *len)
+{
+	struct find_peer_ctx c;
+
+	c.id = peer_id;
+	c.msg = NULL;
+	c.len = 0;
+	if (peers && n)
+		(void)et_pb_foreach_msg(peers, n, 1, find_peer_cb, &c);
+	if (!c.msg)
+		return 0;
+	*msg = c.msg;
+	*len = c.len;
+	return 1;
+}
+
+/* 在 ListRouteResponse 里按 peer_id 找 Route */
+struct find_route_ctx {
+	uint32_t id;
+	const uint8_t *msg;
+	size_t len;
+};
+
+static int find_route_cb(const uint8_t *b, size_t n, void *ud)
+{
+	struct find_route_ctx *c = ud;
+	uint64_t id = 0;
+
+	if (et_pb_get_u64(b, n, 1, &id))
+		return 0;
+	if ((uint32_t)id != c->id)
+		return 0;
+	c->msg = b;
+	c->len = n;
+	return 1;
+}
+
+static int find_route(const uint8_t *routes, size_t n, uint32_t peer_id,
+		      const uint8_t **msg, size_t *len)
+{
+	struct find_route_ctx c;
+
+	c.id = peer_id;
+	c.msg = NULL;
+	c.len = 0;
+	if (routes && n)
+		(void)et_pb_foreach_msg(routes, n, 1, find_route_cb, &c);
+	if (!c.msg)
+		return 0;
+	*msg = c.msg;
+	*len = c.len;
+	return 1;
+}
+
+static int fetch_node_view(struct et_cli_ctx *ctx, struct node_view *nv)
+{
+	et_pb resp;
+	int rc = -1;
+
+	memset(nv, 0, sizeof(*nv));
+	et_pb_init(&resp);
+	if (et_cli_call_instance(ctx, "PeerManageRpc", 7, &resp))
+		goto out;
+	{
+		const uint8_t *b = NULL;
+		size_t n = 0;
+
+		if (!et_pb_find(resp.p, resp.len, 1, 2, NULL, &b, &n))
+			goto out;
+		node_view_parse(nv, b, n);
+	}
+	rc = 0;
+out:
+	et_pb_free(&resp);
+	return rc;
+}
+
+static int fetch_peer_route_data(struct et_cli_ctx *ctx, struct peer_data *d)
+{
+	memset(d, 0, sizeof(*d));
+	et_pb_init(&d->peers);
+	et_pb_init(&d->routes);
+	if (fetch_node_view(ctx, &d->nv))
+		return -1;
+	if (et_cli_call_instance(ctx, "PeerManageRpc", 1, &d->peers))
+		return -1;
+	if (et_cli_call_instance(ctx, "PeerManageRpc", 3, &d->routes))
+		return -1;
+	return 0;
+}
+
+/* ===================== 行构造 ===================== */
+
+static void peer_row_local(struct peer_row *r, const struct node_view *nv)
+{
+	char tmp[64];
+	char *slash;
+
+	memset(r, 0, sizeof(*r));
+	snprintf(r->cidr, sizeof(r->cidr), "%s", nv->ipv4_addr);
+	snprintf(tmp, sizeof(tmp), "%s", nv->ipv4_addr);
+	slash = strchr(tmp, '/');
+	if (slash)
+		*slash = 0;
+	snprintf(r->ipv4, sizeof(r->ipv4), "%s", tmp);
+	snprintf(r->hostname, sizeof(r->hostname), "%s", nv->hostname);
+	snprintf(r->cost, sizeof(r->cost), "Local");
+	snprintf(r->lat, sizeof(r->lat), "-");
+	snprintf(r->loss, sizeof(r->loss), "-");
+	snprintf(r->rx, sizeof(r->rx), "-");
+	snprintf(r->tx, sizeof(r->tx), "-");
+	snprintf(r->tunnel, sizeof(r->tunnel), "-");
+	snprintf(r->nat, sizeof(r->nat), "%s",
+		 nv->have_nat ? et_nat_name(nv->nat) : "Unknown");
+	snprintf(r->id, sizeof(r->id), "%u", nv->peer_id);
+	snprintf(r->version, sizeof(r->version), "%s", nv->version);
+}
+
+static void route_row_local(struct route_row *r, const struct node_view *nv)
+{
+	memset(r, 0, sizeof(*r));
+	snprintf(r->ipv4, sizeof(r->ipv4), "%s", nv->ipv4_addr);
+	snprintf(r->hostname, sizeof(r->hostname), "%s", nv->hostname);
+	snprintf(r->proxy, sizeof(r->proxy), "%s", nv->proxy_join);
+	snprintf(r->nh_ipv4, sizeof(r->nh_ipv4), "-");
+	snprintf(r->nh_hostname, sizeof(r->nh_hostname), "Local");
+	r->nh_lat = 0.0;
+	snprintf(r->nh_ipv4_lf, sizeof(r->nh_ipv4_lf), "-");
+	snprintf(r->nh_hostname_lf, sizeof(r->nh_hostname_lf), "Local");
+	snprintf(r->version, sizeof(r->version), "%s", nv->version);
+}
+
+static void peer_row_from_route(struct peer_row *r, const uint8_t *route,
+				size_t rn, const uint8_t *pi, size_t pin)
+{
+	const uint8_t *ia = NULL;
+	size_t ial = 0;
+	uint64_t peer_id = 0, cost = 0;
+	double lat = 0.0, loss = 0.0;
+	char ver[64] = "";
+
+	memset(r, 0, sizeof(*r));
+	if (et_pb_find(route, rn, 2, 2, NULL, &ia, &ial))
+		et_fmt_ipv4inet(ia, ial, r->cidr, sizeof(r->cidr));
+	{
+		const uint8_t *addr = NULL;
+		size_t al = 0;
+		uint64_t a = 0;
+
+		if (ia && et_pb_find(ia, ial, 1, 2, NULL, &addr, &al))
+			(void)et_pb_get_u64(addr, al, 1, &a);
+		et_fmt_ipv4((uint32_t)a, r->ipv4, sizeof(r->ipv4));
+	}
+	(void)et_pb_get_str(route, rn, 6, r->hostname, sizeof(r->hostname));
+	(void)et_pb_get_u64(route, rn, 1, &peer_id);
+	(void)et_pb_get_u64(route, rn, 4, &cost);
+	if ((int32_t)cost == 1)
+		snprintf(r->cost, sizeof(r->cost), "p2p");
+	else
+		snprintf(r->cost, sizeof(r->cost), "relay(%d)", (int32_t)cost);
+	if ((int32_t)cost == 1) {
+		if (!peer_latency(pi, pin, &lat))
+			lat = 0.0;
+	} else {
+		uint64_t v = 0;
+
+		if (!et_pb_get_u64(route, rn, 14, &v))
+			lat = (double)(int32_t)v;
+	}
+	snprintf(r->lat, sizeof(r->lat), "%.2f", lat);
+	snprintf(r->loss, sizeof(r->loss), "%.1f%%",
+		 (peer_loss(pi, pin, &loss) ? loss : 0.0) * 100.0);
+	et_fmt_size(peer_bytes(pi, pin, 0), r->rx, sizeof(r->rx));
+	et_fmt_size(peer_bytes(pi, pin, 1), r->tx, sizeof(r->tx));
+	peer_protos(pi, pin, r->tunnel, sizeof(r->tunnel));
+	{
+		const uint8_t *st = NULL;
+		size_t stl = 0;
+		uint64_t nat = 0;
+
+		if (et_pb_find(route, rn, 7, 2, NULL, &st, &stl) &&
+		    !et_pb_get_u64(st, stl, 1, &nat))
+			snprintf(r->nat, sizeof(r->nat), "%s",
+				 et_nat_name(nat));
+		else
+			snprintf(r->nat, sizeof(r->nat), "Unknown");
+	}
+	snprintf(r->id, sizeof(r->id), "%u", (unsigned)peer_id);
+	(void)et_pb_get_str(route, rn, 9, ver, sizeof(ver));
+	snprintf(r->version, sizeof(r->version), "%s",
+		 ver[0] ? ver : "unknown");
+}
+
+static void route_row_from(struct route_row *r, const uint8_t *route,
+			   size_t rn, const struct peer_data *d)
+{
+	uint64_t peer_id = 0, next_hop = 0, v = 0;
+	int32_t cost = 0;
+	const uint8_t *nh = NULL;
+	size_t nhn = 0;
+
+	memset(r, 0, sizeof(*r));
+	{
+		const uint8_t *ia = NULL;
+		size_t ial = 0;
+
+		if (et_pb_find(route, rn, 2, 2, NULL, &ia, &ial))
+			et_fmt_ipv4inet(ia, ial, r->ipv4, sizeof(r->ipv4));
+	}
+	(void)et_pb_get_str(route, rn, 6, r->hostname, sizeof(r->hostname));
+	join_strings(route, rn, 5, ",", r->proxy, sizeof(r->proxy));
+	(void)et_pb_get_u64(route, rn, 1, &peer_id);
+	(void)et_pb_get_u64(route, rn, 3, &next_hop);
+	if (!et_pb_get_u64(route, rn, 4, &v))
+		cost = (int32_t)v;
+	r->path_len = cost;
+	if (!et_pb_get_u64(route, rn, 11, &v))
+		r->path_latency = (long long)(int32_t)v;
+	if (!et_pb_get_u64(route, rn, 13, &v))
+		r->path_len_lf = (long long)(int32_t)v;
+	if (!et_pb_get_u64(route, rn, 14, &v))
+		r->path_latency_lf = (long long)(int32_t)v;
+
+	/* next_hop 必须能在同一张路由表里找到，否则上游直接跳过该行 */
+	if (!find_route(d->routes.p, d->routes.len, (uint32_t)next_hop, &nh,
+			&nhn)) {
+		r->skip = 1;
+		return;
+	}
+	{
+		const uint8_t *pi = NULL;
+		size_t pin = 0;
+		double lat = 0.0;
+
+		(void)find_peer(d->peers.p, d->peers.len, (uint32_t)next_hop,
+				&pi, &pin);
+		if (!peer_latency(pi, pin, &lat))
+			lat = 0.0;
+		r->nh_lat = lat;
+	}
+	if (cost == 1) {
+		snprintf(r->nh_ipv4, sizeof(r->nh_ipv4), "DIRECT");
+		snprintf(r->nh_hostname, sizeof(r->nh_hostname), "DIRECT");
+	} else {
+		const uint8_t *ia = NULL;
+		size_t ial = 0;
+
+		if (et_pb_find(nh, nhn, 2, 2, NULL, &ia, &ial))
+			et_fmt_ipv4inet(ia, ial, r->nh_ipv4,
+					sizeof(r->nh_ipv4));
+		(void)et_pb_get_str(nh, nhn, 6, r->nh_hostname,
+				    sizeof(r->nh_hostname));
+	}
+	/* latency_first 版本 */
+	{
+		uint64_t nh_lf = 0;
+		const uint8_t *nhl = NULL;
+		size_t nhln = 0;
+
+		(void)et_pb_get_u64(route, rn, 12, &nh_lf);
+		if (r->path_len_lf == 1) {
+			snprintf(r->nh_ipv4_lf, sizeof(r->nh_ipv4_lf), "DIRECT");
+			snprintf(r->nh_hostname_lf, sizeof(r->nh_hostname_lf),
+				 "DIRECT");
+		} else if (find_route(d->routes.p, d->routes.len,
+				      (uint32_t)nh_lf, &nhl, &nhln)) {
+			const uint8_t *ia = NULL;
+			size_t ial = 0;
+
+			if (et_pb_find(nhl, nhln, 2, 2, NULL, &ia, &ial))
+				et_fmt_ipv4inet(ia, ial, r->nh_ipv4_lf,
+						sizeof(r->nh_ipv4_lf));
+			(void)et_pb_get_str(nhl, nhln, 6, r->nh_hostname_lf,
+					    sizeof(r->nh_hostname_lf));
+		}
+	}
+	{
+		char ver[64] = "";
+
+		(void)et_pb_get_str(route, rn, 9, ver, sizeof(ver));
+		snprintf(r->version, sizeof(r->version), "%s",
+			 ver[0] ? ver : "unknown");
+	}
+}
+
+static int peer_row_cmp(const void *p1, const void *p2)
+{
+	const struct peer_row *a = p1, *b = p2;
+	int a_local = !strcmp(a->cost, "Local");
+	int b_local = !strcmp(b->cost, "Local");
+	int a_pub, b_pub;
+	uint32_t a_ip = 0, b_ip = 0;
+	unsigned o1, o2, o3, o4;
+
+	if (a_local != b_local)
+		return a_local ? -1 : 1;
+	a_pub = !strncmp(a->hostname, PUBLIC_SERVER_PREFIX,
+			 strlen(PUBLIC_SERVER_PREFIX));
+	b_pub = !strncmp(b->hostname, PUBLIC_SERVER_PREFIX,
+			 strlen(PUBLIC_SERVER_PREFIX));
+	if (a_pub != b_pub)
+		return a_pub ? -1 : 1;
+	if (sscanf(a->ipv4, "%u.%u.%u.%u", &o1, &o2, &o3, &o4) == 4)
+		a_ip = (o1 << 24) | (o2 << 16) | (o3 << 8) | o4;
+	if (sscanf(b->ipv4, "%u.%u.%u.%u", &o1, &o2, &o3, &o4) == 4)
+		b_ip = (o1 << 24) | (o2 << 16) | (o3 << 8) | o4;
+	if (a_ip != b_ip)
+		return a_ip < b_ip ? -1 : 1;
+	return strcmp(a->hostname, b->hostname);
+}
+
+static int route_row_cmp(const void *p1, const void *p2)
+{
+	const struct route_row *a = p1, *b = p2;
+	uint32_t a_ip = 0, b_ip = 0;
+	unsigned o1, o2, o3, o4;
+
+	if (sscanf(a->ipv4, "%u.%u.%u.%u", &o1, &o2, &o3, &o4) == 4)
+		a_ip = (o1 << 24) | (o2 << 16) | (o3 << 8) | o4;
+	if (sscanf(b->ipv4, "%u.%u.%u.%u", &o1, &o2, &o3, &o4) == 4)
+		b_ip = (o1 << 24) | (o2 << 16) | (o3 << 8) | o4;
+	if (a_ip != b_ip)
+		return a_ip < b_ip ? -1 : 1;
+	return 0;
+}
+
+static int build_peer_rows(struct peer_data *d)
+{
+	int nroute = 0;
+	et_pb_rd r;
+	unsigned f, w;
+	uint64_t v;
+	const uint8_t *b = NULL;
+	size_t l = 0;
+
+	et_pb_rd_init(&r, d->routes.p, d->routes.len);
+	while (et_pb_next(&r, &f, &w, &v, &b, &l) > 0)
+		if (f == 1 && w == 2)
+			nroute++;
+	d->prows = calloc((size_t)nroute + 1, sizeof(*d->prows));
+	if (!d->prows)
+		return -1;
+	peer_row_local(&d->prows[0], &d->nv);
+	d->nprows = 1;
+	et_pb_rd_init(&r, d->routes.p, d->routes.len);
+	while (et_pb_next(&r, &f, &w, &v, &b, &l) > 0) {
+		const uint8_t *pi = NULL;
+		size_t pin = 0;
+		uint64_t peer_id = 0;
+
+		if (f != 1 || w != 2)
+			continue;
+		(void)et_pb_get_u64(b, l, 1, &peer_id);
+		(void)find_peer(d->peers.p, d->peers.len, (uint32_t)peer_id,
+				&pi, &pin);
+		peer_row_from_route(&d->prows[d->nprows], b, l, pi, pin);
+		d->nprows++;
+	}
+	qsort(d->prows, (size_t)d->nprows, sizeof(*d->prows), peer_row_cmp);
+	return 0;
+}
+
+static int build_route_rows(struct peer_data *d)
+{
+	int nroute = 0;
+	et_pb_rd r;
+	unsigned f, w;
+	uint64_t v;
+	const uint8_t *b = NULL;
+	size_t l = 0;
+
+	et_pb_rd_init(&r, d->routes.p, d->routes.len);
+	while (et_pb_next(&r, &f, &w, &v, &b, &l) > 0)
+		if (f == 1 && w == 2)
+			nroute++;
+	d->rrows = calloc((size_t)nroute + 1, sizeof(*d->rrows));
+	if (!d->rrows)
+		return -1;
+	route_row_local(&d->rrows[0], &d->nv);
+	d->nrrows = 1;
+	et_pb_rd_init(&r, d->routes.p, d->routes.len);
+	while (et_pb_next(&r, &f, &w, &v, &b, &l) > 0) {
+		struct route_row row;
+
+		if (f != 1 || w != 2)
+			continue;
+		route_row_from(&row, b, l, d);
+		if (row.skip)
+			continue; /* next_hop 找不到：上游跳过 */
+		d->rrows[d->nrrows] = row;
+		d->nrrows++;
+	}
+	qsort(d->rrows + 1, (size_t)(d->nrrows - 1), sizeof(*d->rrows),
+	      route_row_cmp);
+	return 0;
+}
+
+/* ===================== 渲染 ===================== */
+
+static void emit_peer_table(struct et_cli_ctx *ctx, const struct peer_data *d)
+{
+	static const char *hdr[] = { "ipv4", "hostname", "cost", "lat(ms)",
+				     "loss", "rx",	   "tx",   "tunnel",
+				     "NAT",  "version" };
+	et_table t;
+
+	et_table_init(&t, 10, hdr);
+	for (int i = 0; i < d->nprows; i++) {
+		const char *cells[10] = { d->prows[i].cidr,
+					  d->prows[i].hostname,
+					  d->prows[i].cost,
+					  d->prows[i].lat,
+					  d->prows[i].loss,
+					  d->prows[i].rx,
+					  d->prows[i].tx,
+					  d->prows[i].tunnel,
+					  d->prows[i].nat,
+					  d->prows[i].version };
+
+		et_table_add_row(&t, cells);
+	}
+	(void)et_table_render(&t, &ctx->opts, &ctx->out);
+	et_table_free(&t);
+}
+
+static void emit_peer_json(et_json *j, const struct peer_data *d)
+{
+	et_json_arr_begin(j, NULL);
+	for (int i = 0; i < d->nprows; i++) {
+		et_json_obj_begin(j, NULL);
+		et_json_str(j, "cidr", d->prows[i].cidr);
+		et_json_str(j, "ipv4", d->prows[i].ipv4);
+		et_json_str(j, "hostname", d->prows[i].hostname);
+		et_json_str(j, "cost", d->prows[i].cost);
+		et_json_str(j, "lat_ms", d->prows[i].lat);
+		et_json_str(j, "loss_rate", d->prows[i].loss);
+		et_json_str(j, "rx_bytes", d->prows[i].rx);
+		et_json_str(j, "tx_bytes", d->prows[i].tx);
+		et_json_str(j, "tunnel_proto", d->prows[i].tunnel);
+		et_json_str(j, "nat_type", d->prows[i].nat);
+		et_json_str(j, "id", d->prows[i].id);
+		et_json_str(j, "version", d->prows[i].version);
+		et_json_obj_end(j);
+	}
+	et_json_arr_end(j);
+}
+
+static void emit_route_table(struct et_cli_ctx *ctx, const struct peer_data *d)
+{
+	static const char *hdr[] = { "ipv4",
+				     "hostname",
+				     "proxy_cidrs",
+				     "next_hop_ipv4",
+				     "next_hop_hostname",
+				     "next_hop_lat",
+				     "path_len",
+				     "path_latency",
+				     "next_hop_ipv4_lat_first",
+				     "next_hop_hostname_lat_first",
+				     "path_len_lat_first",
+				     "path_latency_lat_first",
+				     "version" };
+	et_table t;
+
+	et_table_init(&t, 13, hdr);
+	for (int i = 0; i < d->nrrows; i++) {
+		char proxy[1024];
+		char nh_lat[32];
+		char path_len[24], path_lat[24], len_lf[24], lat_lf[24];
+		const char *cells[13];
+
+		proxy_multiline(d->rrows[i].proxy, proxy, sizeof(proxy));
+		et_fmt_f64(d->rrows[i].nh_lat, nh_lat, sizeof(nh_lat));
+		snprintf(path_len, sizeof(path_len), "%lld",
+			 d->rrows[i].path_len);
+		snprintf(path_lat, sizeof(path_lat), "%lld",
+			 d->rrows[i].path_latency);
+		snprintf(len_lf, sizeof(len_lf), "%lld",
+			 d->rrows[i].path_len_lf);
+		snprintf(lat_lf, sizeof(lat_lf), "%lld",
+			 d->rrows[i].path_latency_lf);
+		cells[0] = d->rrows[i].ipv4;
+		cells[1] = d->rrows[i].hostname;
+		cells[2] = proxy;
+		cells[3] = d->rrows[i].nh_ipv4;
+		cells[4] = d->rrows[i].nh_hostname;
+		cells[5] = nh_lat;
+		cells[6] = path_len;
+		cells[7] = path_lat;
+		cells[8] = d->rrows[i].nh_ipv4_lf;
+		cells[9] = d->rrows[i].nh_hostname_lf;
+		cells[10] = len_lf;
+		cells[11] = lat_lf;
+		cells[12] = d->rrows[i].version;
+		et_table_add_row(&t, cells);
+	}
+	(void)et_table_render(&t, &ctx->opts, &ctx->out);
+	et_table_free(&t);
+}
+
+static void emit_route_json(et_json *j, const struct peer_data *d)
+{
+	et_json_arr_begin(j, NULL);
+	for (int i = 0; i < d->nrrows; i++) {
+		et_json_obj_begin(j, NULL);
+		et_json_str(j, "ipv4", d->rrows[i].ipv4);
+		et_json_str(j, "hostname", d->rrows[i].hostname);
+		et_json_str(j, "proxy_cidrs", d->rrows[i].proxy);
+		et_json_str(j, "next_hop_ipv4", d->rrows[i].nh_ipv4);
+		et_json_str(j, "next_hop_hostname", d->rrows[i].nh_hostname);
+		et_json_double(j, "next_hop_lat", d->rrows[i].nh_lat);
+		et_json_int(j, "path_len", d->rrows[i].path_len);
+		et_json_int(j, "path_latency", d->rrows[i].path_latency);
+		et_json_str(j, "next_hop_ipv4_lat_first",
+			    d->rrows[i].nh_ipv4_lf);
+		et_json_str(j, "next_hop_hostname_lat_first",
+			    d->rrows[i].nh_hostname_lf);
+		et_json_int(j, "path_len_lat_first", d->rrows[i].path_len_lf);
+		et_json_int(j, "path_latency_lat_first",
+			    d->rrows[i].path_latency_lf);
+		et_json_str(j, "version", d->rrows[i].version);
+		et_json_obj_end(j);
+	}
+	et_json_arr_end(j);
+}
+
+/* 多实例时统一包一层；单实例直接输出数组/对象 */
+struct fanout {
+	struct et_cli_target *tg;
+	int nt;
+	int json;
+	int index;
+	et_json j;
+};
+
+static int fanout_begin(struct et_cli_ctx *ctx, struct fanout *f)
+{
+	memset(f, 0, sizeof(*f));
+	f->nt = et_cli_resolve_targets(ctx, &f->tg);
+	if (f->nt < 0)
+		return -1;
+	f->json = et_cli_want_json(&ctx->opts);
+	if (f->json) {
+		et_json_init(&f->j, &ctx->out);
+		if (f->nt > 1)
+			et_json_arr_begin(&f->j, NULL);
+	}
+	return 0;
+}
+
+static void fanout_end(struct et_cli_ctx *ctx, struct fanout *f)
+{
+	if (f->json && f->nt > 1)
+		et_json_arr_end(&f->j);
+	if (ctx->out.len && ctx->out.p && ctx->out.p[ctx->out.len - 1] != '\n')
+		et_cli_puts(ctx, "\n");
+	et_cli_free_targets(f->tg, f->nt);
+	ctx->target = NULL;
+}
+
+static void fanout_header(struct et_cli_ctx *ctx, struct fanout *f)
+{
+	if (f->json || f->nt <= 1)
+		return;
+	if (f->index)
+		et_cli_puts(ctx, "\n");
+	{
+		char label[192];
+		const struct et_cli_target *t = &f->tg[f->index];
+
+		if (t->name[0] && t->id_str[0])
+			snprintf(label, sizeof(label), "%s (%s)", t->name,
+				 t->id_str);
+		else if (t->name[0])
+			snprintf(label, sizeof(label), "%s", t->name);
+		else if (t->id_str[0])
+			snprintf(label, sizeof(label), "%s", t->id_str);
+		else
+			snprintf(label, sizeof(label), "selected instance");
+		et_cli_printf(ctx, "== %s ==\n", label);
+	}
+}
+
+/* 多实例 JSON 包裹 */
+static void fanout_json_open(struct fanout *f)
+{
+	if (!f->json || f->nt <= 1)
+		return;
+	et_json_obj_begin(&f->j, NULL);
+	et_json_str(&f->j, "instance_id", f->tg[f->index].id_str);
+	et_json_str(&f->j, "instance_name", f->tg[f->index].name);
+}
+
+static void fanout_json_close(struct fanout *f)
+{
+	if (!f->json || f->nt <= 1)
+		return;
+	et_json_obj_end(&f->j);
+}
+
+/* ===================== peer ===================== */
+
+static int run_peer_list(struct et_cli_ctx *ctx)
+{
+	struct fanout f;
+	int rc = 0;
+
+	if (fanout_begin(ctx, &f))
+		return 1;
+	for (f.index = 0; f.index < f.nt; f.index++) {
+		struct peer_data d;
+
+		ctx->target = &f.tg[f.index];
+		if (fetch_peer_route_data(ctx, &d) || build_peer_rows(&d)) {
+			fprintf(stderr,
+				"easytier-cli: failed to get peer info\n");
+			peer_data_free(&d);
+			rc = 1;
+			break;
+		}
+		fanout_header(ctx, &f);
+		if (f.json) {
+			fanout_json_open(&f);
+			if (f.nt > 1) {
+				et_json_arr_begin(&f.j, "result");
+				emit_peer_json(&f.j, &d);
+				et_json_arr_end(&f.j);
+			} else {
+				emit_peer_json(&f.j, &d);
+			}
+			fanout_json_close(&f);
+		} else {
+			emit_peer_table(ctx, &d);
+		}
+		peer_data_free(&d);
+	}
+	fanout_end(ctx, &f);
+	return rc;
+}
+
+int et_cli_peer(struct et_cli_ctx *ctx, int argc, char **argv)
+{
+	if (argc > 0) {
+		if (!strcmp(argv[0], "list") || !strcmp(argv[0], "ls"))
+			return run_peer_list(ctx);
+		if (!strcmp(argv[0], "list-foreign") ||
+		    !strcmp(argv[0], "list-global-foreign")) {
+			fprintf(stderr,
+				"easytier-cli: %s is not supported by this build\n",
+				argv[0]);
+			return 1;
+		}
+		return ET_ENOENT;
+	}
+	return run_peer_list(ctx);
+}
+
+/* ===================== route ===================== */
+
+static int run_route_list(struct et_cli_ctx *ctx)
+{
+	struct fanout f;
+	int rc = 0;
+
+	if (fanout_begin(ctx, &f))
+		return 1;
+	for (f.index = 0; f.index < f.nt; f.index++) {
+		struct peer_data d;
+
+		ctx->target = &f.tg[f.index];
+		if (fetch_peer_route_data(ctx, &d) || build_route_rows(&d)) {
+			fprintf(stderr,
+				"easytier-cli: failed to get route info\n");
+			peer_data_free(&d);
+			rc = 1;
+			break;
+		}
+		fanout_header(ctx, &f);
+		if (f.json) {
+			fanout_json_open(&f);
+			if (f.nt > 1) {
+				et_json_arr_begin(&f.j, "result");
+				emit_route_json(&f.j, &d);
+				et_json_arr_end(&f.j);
+			} else {
+				emit_route_json(&f.j, &d);
+			}
+			fanout_json_close(&f);
+		} else {
+			emit_route_table(ctx, &d);
+		}
+		peer_data_free(&d);
+	}
+	fanout_end(ctx, &f);
+	return rc;
+}
+
+static int run_route_dump(struct et_cli_ctx *ctx)
+{
+	et_pb resp;
+	int rc = 1;
+
+	et_pb_init(&resp);
+	if (et_cli_call_instance(ctx, "PeerManageRpc", 4, &resp) == 0) {
+		char out[8192];
+
+		(void)et_pb_get_str(resp.p, resp.len, 1, out, sizeof(out));
+		et_cli_puts(ctx, out);
+		if (ctx->out.len && ctx->out.p[ctx->out.len - 1] != '\n')
+			et_cli_puts(ctx, "\n");
+		rc = 0;
+	} else {
+		fprintf(stderr, "easytier-cli: failed to dump route\n");
+	}
+	et_pb_free(&resp);
+	return rc;
+}
+
+int et_cli_route(struct et_cli_ctx *ctx, int argc, char **argv)
+{
+	if (argc > 0) {
+		if (!strcmp(argv[0], "list") || !strcmp(argv[0], "ls"))
+			return run_route_list(ctx);
+		if (!strcmp(argv[0], "dump"))
+			return run_route_dump(ctx);
+		return ET_ENOENT;
+	}
+	return run_route_list(ctx);
+}
+
+/* ===================== node ===================== */
+
+static int run_node(struct et_cli_ctx *ctx, int want_config)
+{
+	struct fanout f;
+	int rc = 0;
+
+	if (fanout_begin(ctx, &f))
+		return 1;
+	for (f.index = 0; f.index < f.nt; f.index++) {
+		struct node_view nv;
+
+		ctx->target = &f.tg[f.index];
+		if (fetch_node_view(ctx, &nv)) {
+			fprintf(stderr,
+				"easytier-cli: failed to get node info\n");
+			rc = 1;
+			break;
+		}
+		fanout_header(ctx, &f);
+		if (f.json) {
+			fanout_json_open(&f);
+			if (f.nt > 1)
+				et_json_arr_begin(&f.j, "result");
+			if (want_config) {
+				et_json_str(&f.j, NULL, nv.config);
+			} else {
+				et_json_obj_begin(&f.j, NULL);
+				et_json_uint(&f.j, "peer_id", nv.peer_id);
+				et_json_str(&f.j, "ipv4_addr", nv.ipv4_addr);
+				et_json_arr_begin(&f.j, "proxy_cidrs");
+				{
+					/* 拆回数组 */
+					char tmp[512];
+					char *p, *save = NULL;
+
+					snprintf(tmp, sizeof(tmp), "%s",
+						 nv.proxy_join);
+					for (p = strtok_r(tmp, ",", &save); p;
+					     p = strtok_r(NULL, ",", &save)) {
+						char *s = p;
+
+						while (*s == ' ')
+							s++;
+						et_json_str(&f.j, NULL, s);
+					}
+				}
+				et_json_arr_end(&f.j);
+				et_json_str(&f.j, "hostname", nv.hostname);
+				et_json_obj_begin(&f.j, "stun_info");
+				et_json_uint(&f.j, "udp_nat_type", nv.nat);
+				et_json_arr_begin(&f.j, "public_ip");
+				for (int i = 0; i < nv.n_public; i++)
+					et_json_str(&f.j, NULL, nv.public_ip[i]);
+				et_json_arr_end(&f.j);
+				et_json_obj_end(&f.j);
+				et_json_str(&f.j, "inst_id", nv.inst_id);
+				et_json_arr_begin(&f.j, "listeners");
+				for (int i = 0; i < nv.n_listeners; i++)
+					et_json_str(&f.j, NULL, nv.listeners[i]);
+				et_json_arr_end(&f.j);
+				et_json_str(&f.j, "config", nv.config);
+				et_json_str(&f.j, "version", nv.version);
+				et_json_obj_end(&f.j);
+			}
+			if (f.nt > 1)
+				et_json_arr_end(&f.j);
+			fanout_json_close(&f);
+		} else if (want_config) {
+			et_cli_puts(ctx, nv.config);
+			if (!nv.config[0] ||
+			    ctx->out.p[ctx->out.len - 1] != '\n')
+				et_cli_puts(ctx, "\n");
+		} else {
+			/* kv 表：表头行是 Virtual IP，其余逐行 */
+			const char *labels[96];
+			const char *values[96];
+			int n = 0;
+
+			labels[n] = "Virtual IP";
+			values[n] = nv.ipv4_addr;
+			n++;
+			labels[n] = "Hostname";
+			values[n] = nv.hostname;
+			n++;
+			labels[n] = "Proxy CIDRs";
+			values[n] = nv.proxy_join;
+			n++;
+			{
+				static char idbuf[32];
+
+				snprintf(idbuf, sizeof(idbuf), "%u",
+					 nv.peer_id);
+				labels[n] = "Peer ID";
+				values[n] = idbuf;
+				n++;
+			}
+			for (int i = 0; i < nv.n_public; i++) {
+				labels[n] = strchr(nv.public_ip[i], ':')
+						    ? "Public IPv6"
+						    : "Public IPv4";
+				values[n] = nv.public_ip[i];
+				n++;
+			}
+			labels[n] = "UDP Stun Type";
+			values[n] = nv.have_nat ? et_nat_name(nv.nat)
+						: "Unknown";
+			n++;
+			for (int i = 0; i < nv.n_iface_v4; i++) {
+				labels[n] = "Interface IPv4";
+				values[n] = nv.iface_v4[i];
+				n++;
+			}
+			for (int i = 0; i < nv.n_iface_v6; i++) {
+				labels[n] = "Interface IPv6";
+				values[n] = nv.iface_v6[i];
+				n++;
+			}
+			for (int i = 0;
+			     i < nv.n_listeners && n < 94; i++) {
+				static char lb[NODE_LISTENERS][24];
+
+				if (!strncmp(nv.listeners[i], "ring", 4))
+					continue;
+				snprintf(lb[i], sizeof(lb[i]), "Listener %d",
+					 nv.listener_idx[i]);
+				labels[n] = lb[i];
+				values[n] = nv.listeners[i];
+				n++;
+			}
+			(void)et_table_kv_print(labels, values, n, &ctx->opts,
+						&ctx->out);
+		}
+	}
+	fanout_end(ctx, &f);
+	return rc;
+}
+
+int et_cli_node(struct et_cli_ctx *ctx, int argc, char **argv)
+{
+	if (argc > 0) {
+		if (!strcmp(argv[0], "info"))
+			return run_node(ctx, 0);
+		if (!strcmp(argv[0], "config"))
+			return run_node(ctx, 1);
+		return ET_ENOENT;
+	}
+	return run_node(ctx, 0);
+}

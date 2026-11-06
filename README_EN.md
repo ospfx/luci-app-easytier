@@ -10,7 +10,7 @@ OpenWrt LuCI web interface for managing [EasyTier](https://github.com/EasyTier/E
 
 > **The `main` branch is the C-backend rewrite.** Process supervision, configuration handling, firewall
 > orchestration, binary download/install and status collection are all implemented in C
-> (`/usr/sbin/easytierd`, `/usr/sbin/easytierctl`); LuCI keeps only a 129-line forwarding shell.
+> (`/usr/sbin/easytierd`, `/usr/sbin/easytier-cli`); LuCI keeps only a 129-line forwarding shell.
 > The old Lua + Shell implementation lives in [`legacy/lua`](../../tree/legacy/lua); see
 > [docs/C-PORT.md](docs/C-PORT.md) for the module-by-module comparison.
 
@@ -40,7 +40,7 @@ Two processes plus one thin forwarding shell; business logic exists exactly once
 flowchart LR
     B["Browser<br/>ES5 + XMLHttpRequest"] -->|HTTP| U["uhttpd"]
     U --> L["LuCI Lua1<br/>controller/easytier.lua<br/>129 lines: menu + forward"]
-    L -->|"sys.exec:<br/>easytierctl api &lt;method&gt; k=v..."| C["easytierctl<br/>/usr/sbin/easytierctl"]
+    L -->|"sys.exec:<br/>easytier-cli api &lt;method&gt; k=v..."| C["easytier-cli<br/>/usr/sbin/easytier-cli"]
     C -->|"same handlers<br/>route table et_routes[]"| D["easytierd<br/>/usr/sbin/easytierd"]
     D -->|"UCI / signals"| F[("/etc/config/easytier<br/>/etc/easytier/config.toml")]
     D -->|fork + exec| E["easytier-core<br/>(+ easytier-web-embed)"]
@@ -50,7 +50,7 @@ flowchart LR
 ```
 Browser
   └─ uhttpd ──> LuCI (Lua1: menu registration and request forwarding only)
-                   └─ sys.exec("easytierctl api <method> ...")
+                   └─ sys.exec("easytier-cli api <method> ...")
                         └─ easytierd handlers (src/api/*.c, 28 routes)
                              ├─ read/write UCI (libuci)
                              ├─ scan /proc, read sysfs (status, processes, CPU, memory)
@@ -62,8 +62,8 @@ Path of a single click (saving the configuration):
 
 1. the browser POSTs the form to `/cgi-bin/luci/admin/vpn/easytier/config_save`;
 2. `easytier.lua` parses no business fields; it turns the request into `key=value` pairs and calls
-   `easytierctl api config_save ...`;
-3. `easytierctl` invokes `et_api_config_save()` in-process (the same handler used by ubus and by the daemon);
+   `easytier-cli api config_save ...`;
+3. `easytier-cli` invokes `et_api_config_save()` in-process (the same handler used by ubus and by the daemon);
 4. the handler validates against the schema and writes `/etc/config/easytier`;
 5. actions that need a restart are dispatched to a detached child process, so the HTTP call returns immediately.
 
@@ -75,15 +75,15 @@ Key design points:
   so the existing page templates work unchanged;
 - **supervision moved from procd into the daemon**: `easytierd service run` handles respawn
   (max 20 failures per hour, 5s apart), 60-second log rotation, the checkip watchdog and signal cascade;
-- **no ubus object yet** — every call currently goes through the `easytierctl exec` path
+- **no ubus object yet** — every call currently goes through the `easytier-cli exec` path
   (see [docs/C-PORT.md](docs/C-PORT.md)).
 
 ## 📦 The Two Packages
 
 | Package | Contents | Role | Depends |
 | --- | --- | --- | --- |
-| `easytierd` | `/usr/sbin/easytierd`, `/usr/sbin/easytierctl` | **C backend**: supervision, config model, firewall/interface orchestration, status, logs, upload/download/install, i18n dictionary | `libuci` `libjson-c` |
-| `luci-app-easytier` | `luasrc/controller/easytier.lua`, 6 HTM templates, `/etc/init.d/easytier` (24 lines), UCI defaults, rpcd ACL, i18n JSON | **UI and bridge**: menu, templates, forward requests to `easytierctl` | `+kmod-tun` `+luci-compat` **`+easytierd`** |
+| `easytierd` | `/usr/sbin/easytierd`, `/usr/sbin/easytier-cli` | **C backend**: supervision, config model, firewall/interface orchestration, status, logs, upload/download/install, i18n dictionary | `libuci` `libjson-c` |
+| `luci-app-easytier` | `luasrc/controller/easytier.lua`, 6 HTM templates, `/etc/init.d/easytier` (24 lines), UCI defaults, rpcd ACL, i18n JSON | **UI and bridge**: menu, templates, forward requests to `easytier-cli` | `+kmod-tun` `+luci-compat` **`+easytierd`** |
 
 `luci-app-easytier` hard-depends on `easytierd`: without it the pages load but every endpoint fails. The package
 manager resolves this dependency; if you `scp` the ipks and install them one by one, use the order
@@ -215,7 +215,7 @@ Full module mapping and the complete list of differences: [docs/C-PORT.md](docs/
 
 1. Overwrite-install is fine: `/etc/config/easytier` and `/etc/easytier/` are listed in `conffiles`;
    `prerm` also backs both up to `/tmp/easytier_backup` and `/tmp/et_config_backup`, and `postinst` restores them.
-2. **Install `easytierd` before `luci-app-easytier`**, otherwise the UI cannot find `easytierctl` and every endpoint fails.
+2. **Install `easytierd` before `luci-app-easytier`**, otherwise the UI cannot find `easytier-cli` and every endpoint fails.
 3. The first start fills in required defaults: missing `web_enabled`, `easytierbin`, `webbin` are written back
    (done by the daemon start path). Note the two kinds of "default": the 61 schema `.def` values are **not**
    written to UCI just because the service starts; form initial values (`listenermode=ON`, `tcp_port=11010`, …)
@@ -232,16 +232,16 @@ Full module mapping and the complete list of differences: [docs/C-PORT.md](docs/
 `easytierd` is missing or not executable:
 
 ```bash
-ls -l /usr/sbin/easytierd /usr/sbin/easytierctl
-easytierctl doctor      # UCI, binaries, arch, external tools, disk, processes
+ls -l /usr/sbin/easytierd /usr/sbin/easytier-cli
+easytier-cli doctor      # UCI, binaries, arch, external tools, disk, processes
 ```
 
 ### Inspect a Single Endpoint
 
 ```bash
-easytierctl api api_status
-easytierctl api get_tun_info ifname=tun0
-easytierctl api config_save network_name=mynet network_secret=secret
+easytier-cli api api_status
+easytier-cli api get_tun_info ifname=tun0
+easytier-cli api config_save network_name=mynet network_secret=secret
 /etc/init.d/easytier restart        # same as easytierd service restart
 ```
 

@@ -16,7 +16,7 @@ Port background and the old/new comparison: [docs/C-PORT.md](docs/C-PORT.md). Ve
 
 - 18.06 has no `menu.d` JSON, so menus and template rendering must use Lua1 `entry()` / `template()`.
   `luasrc/controller/easytier.lua` therefore stays, but it may only do two things: register the menu and forward
-  requests to `easytierctl`.
+  requests to `easytier-cli`.
 - The backend is no longer Lua. The old "write business logic in Lua" rule is void — **do not move logic back into Lua**.
 - The frontend stays ES5 + LuCI Lua1 templates: no ES6+, no LuCI JS framework (`view.js` / `form.js` / `rpc.js`).
 
@@ -41,7 +41,7 @@ repo/
 │   ├── lib/                      # reusable layer: schema, cfg, argv, uci, toml, proc, util, detect, i18n
 │   ├── daemon/                   # lifecycle: etd_entry(main), service, super, net, watchdog
 │   ├── api/                      # HTTP/CLI endpoints: one common layer + 7 handler files + route table
-│   └── ctl/                      # easytierctl (thin CLI)
+│   └── ctl/                      # easytier-cli (thin CLI)
 ├── luci-app-easytier/            # frontend bridge (Lua1 + ES5 templates)
 │   ├── luasrc/controller/easytier.lua   # 129 lines: menu + forwarding
 │   ├── luasrc/view/easytier/*.htm       # 6 page templates (status/core/web/log/upload/console)
@@ -49,9 +49,9 @@ repo/
 │   ├── root/etc/config/easytier         # default UCI (enabled=0 and 6 more)
 │   ├── root/etc/uci-defaults/luci-easytier  # ucitrack, enable service, clear caches
 │   ├── root/usr/share/easytier/i18n/*.json  # dictionaries for C rendering (generated)
-│   ├── root/usr/share/rpcd/acl.d/*.json     # rpcd ACL (UCI easytier + easytierctl exec)
+│   ├── root/usr/share/rpcd/acl.d/*.json     # rpcd ACL (UCI easytier + easytier-cli exec)
 │   └── po/                              # translation sources (zh_Hans + templates/*.pot)
-├── easytierd/Makefile            # OpenWrt package: installs easytierd + easytierctl
+├── easytierd/Makefile            # OpenWrt package: installs easytierd + easytier-cli
 ├── easytier/  easytier-noweb/    # official binary packaging (independent of this plugin)
 ├── scripts/cloud/                # cloud build system (see below)
 ├── tests/                        # golden + frontend bridge tests
@@ -88,7 +88,7 @@ It drives four things:
 2. **argv assembly**: `et_argv_core()` / `et_argv_web()` walk the table **in row order**, so **row order is
    command-line order**;
 3. **form rendering**: `config_render` groups by `.tab`, field order = row order;
-4. **docs and debugging**: `easytierctl api schema` emits the schema as JSON.
+4. **docs and debugging**: `easytier-cli api schema` emits the schema as JSON.
 
 ### Adding an option: the standard recipe
 
@@ -171,7 +171,7 @@ scripts/cloud/setup.sh
 
 # 3) daily compile (host gcc, fastest)
 scripts/cloud/cc.sh                 # compile only (objs)
-scripts/cloud/cc.sh --link          # compile and link easytierd / easytierctl
+scripts/cloud/cc.sh --link          # compile and link easytierd / easytier-cli
 scripts/cloud/cc.sh --cross         # cross gcc: headers/syntax validation only
 scripts/cloud/cc.sh --cross --link  # cross compile and link (needs deps in staging)
 

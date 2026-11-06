@@ -1,13 +1,13 @@
 /*
  * easytierctl.c - 管理 CLI（安装名 easytier-cli，与上游同名）
  *
- * 极薄 Lua 转发层只调用本程序，不包含任何业务逻辑：
- *   easytier-cli peer|route|node [-p <addr>]  与上游 easytier-cli 同名子命令（Markdown 表格）
- *   easytierctl api <method> [key=value ...]     输出 handler 的原始响应
- *   easytierctl api <method> --body-file <path>  附带 POST 体
- *   easytierctl service <start|stop|restart|status|enable|disable>
- *   easytierctl version
- *   easytierctl doctor                          环境自检
+ * 上游同名子命令（peer/route/node/connector/…）全部由 lib/etd_cli_*.c 实现，
+ * 输出与上游 easytier-cli 2.7.0 对齐；本文件只负责全局选项解析、分发，
+ * 以及本项目的额外子命令：
+ *   easytier-cli api <method> [k=v ...] [--body|--body-file]
+ *   easytier-cli service <start|stop|restart|status|enable|disable>
+ *   easytier-cli doctor
+ *   easytier-cli version
  */
 #include "etd.h"
 #include "etd_api.h"
@@ -20,8 +20,6 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/wait.h>
-
-#define ET_RPC_DEFAULT "127.0.0.1:15888"
 
 static void usage(FILE *fp)
 {
@@ -54,11 +52,14 @@ static void usage(FILE *fp)
 		"  help              Print this message or the help of the given subcommand(s)\n"
 		"\n"
 		"Options:\n"
-		"  -p, --rpc-portal <addr>  easytier-core rpc portal address [default: %s]\n"
-		"  -v, --verbose            verbose output\n"
-		"  -h, --help               Print help\n"
-		"  -V, --version            Print version\n",
-		ET_RPC_DEFAULT);
+		"  -p, --rpc-portal <addr>    easytier-core rpc portal address [default: 127.0.0.1:15888]\n"
+		"  -v, --verbose              verbose output\n"
+		"  -o, --output <format>      output format [default: table] [possible values: table, json]\n"
+		"      --no-trunc             disable column truncation\n"
+		"  -i, --instance-id <id>     the instance id\n"
+		"  -n, --instance-name <name> the instance name\n"
+		"  -h, --help                 Print help\n"
+		"  -V, --version              Print version\n");
 }
 
 static int do_api(int argc, char **argv)
@@ -74,6 +75,7 @@ static int do_api(int argc, char **argv)
 	for (int i = 1; i < argc; i++) {
 		if (!strcmp(argv[i], "--body-file") && i + 1 < argc) {
 			size_t len = 0;
+
 			body = et_read_file(argv[++i], &len);
 		} else if (!strcmp(argv[i], "--body") && i + 1 < argc) {
 			body = strdup(argv[++i]);
@@ -112,14 +114,13 @@ static int do_service(int argc, char **argv)
 		usage(stderr);
 		return 2;
 	}
-	/* 服务生命周期实现在 easytierd 里，这里只做转发，避免逻辑双份。
-	 * 逐个参数单独 shell 转义后再拼接 —— 若把整串当成一个单词转义，
-	 * 会被当成单个可执行文件名而报 "not found"。 */
+	/* 服务生命周期实现在 easytierd 里，这里只做转发，避免逻辑双份。 */
 	et_buf cmd;
 	et_buf_init(&cmd);
 	et_buf_add(&cmd, ET_PATH_DAEMON);
 	for (int i = 0; i < argc; i++) {
 		char *q = et_shell_quote(argv[i]);
+
 		if (!q) {
 			et_buf_free(&cmd);
 			return 1;
@@ -129,6 +130,7 @@ static int do_service(int argc, char **argv)
 		free(q);
 	}
 	int rc = system(cmd.p);
+
 	et_buf_free(&cmd);
 	if (rc < 0)
 		return 1;
@@ -140,6 +142,7 @@ static int do_service(int argc, char **argv)
 static int do_doctor(void)
 {
 	char ts[32];
+
 	et_now_str(ts, sizeof(ts));
 	printf("easytier-cli %s\n", ETD_VERSION);
 	printf("时间            : %s\n", ts);
@@ -151,9 +154,11 @@ static int do_doctor(void)
 	       et_file_executable(ET_PATH_WEB_DEF) ? "可执行" : "不可执行");
 
 	const char *arch = et_detect_arch();
+
 	printf("CPU 架构        : %s\n", arch ? arch : "未知");
 
 	const char *tools[] = { "curl", "wget", "unzip", "tar", "ping" };
+
 	printf("外部工具        : ");
 	for (size_t i = 0; i < sizeof(tools) / sizeof(tools[0]); i++)
 		printf("%s=%s ", tools[i], et_have_cmd(tools[i]) ? "有" : "无");
@@ -161,41 +166,79 @@ static int do_doctor(void)
 
 	long long kb = et_df_available_kb("/tmp");
 	char human[32] = "";
+
 	if (kb >= 0)
 		et_human_size(kb * 1024, human, sizeof(human));
 	printf("/tmp 可用空间   : %s\n", human);
 
 	long long lk = et_file_size(ET_LOG_CORE);
+
 	printf("core 日志大小   : %lld 字节\n", lk);
 
 	pid_t pid = et_proc_pid_comm("easytier-core");
+
 	printf("easytier-core   : %s\n", pid > 0 ? "运行中" : "未运行");
 	pid = et_proc_pid_comm("easytier-web");
 	printf("easytier-web    : %s\n", pid > 0 ? "运行中" : "未运行");
 	return 0;
 }
 
+/* 全局选项必须出现在子命令之前；子命令自己的参数原样传下去 */
 int main(int argc, char **argv)
 {
-	const char *rpc = ET_RPC_DEFAULT;
+	struct et_cli_opts o;
+	struct et_cli_ctx ctx;
 	int i = 1;
+	int rc;
 
+	et_cli_opts_init(&o);
 	while (i < argc && argv[i][0] == '-' && argv[i][1] != '\0') {
-		if (!strcmp(argv[i], "-v") || !strcmp(argv[i], "--verbose")) {
+		const char *a = argv[i];
+
+		if (!strcmp(a, "-v") || !strcmp(a, "--verbose")) {
+			o.verbose = 1;
 			et_debug = 1;
 			i++;
-		} else if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
+		} else if (!strcmp(a, "-h") || !strcmp(a, "--help")) {
 			usage(stdout);
 			return 0;
-		} else if (!strcmp(argv[i], "-V") || !strcmp(argv[i], "--version")) {
+		} else if (!strcmp(a, "-V") || !strcmp(a, "--version")) {
 			printf("easytier-cli %s\n", ETD_VERSION);
 			return 0;
-		} else if ((!strcmp(argv[i], "-p") || !strcmp(argv[i], "--rpc-portal")) &&
-			   i + 1 < argc) {
-			rpc = argv[++i];
+		} else if (!strcmp(a, "--no-trunc")) {
+			o.no_trunc = 1;
 			i++;
+		} else if ((!strcmp(a, "-p") || !strcmp(a, "--rpc-portal")) &&
+			   i + 1 < argc) {
+			o.rpc = argv[++i];
+			i++;
+		} else if ((!strcmp(a, "-o") || !strcmp(a, "--output")) &&
+			   i + 1 < argc) {
+			o.format = argv[++i];
+			if (strcmp(o.format, "table") && strcmp(o.format, "json")) {
+				fprintf(stderr,
+					"easytier-cli: invalid output format %s\n",
+					o.format);
+				return 2;
+			}
+			i++;
+		} else if ((!strcmp(a, "-i") || !strcmp(a, "--instance-id")) &&
+			   i + 1 < argc) {
+			o.instance_id = argv[++i];
+			i++;
+		} else if ((!strcmp(a, "-n") || !strcmp(a, "--instance-name")) &&
+			   i + 1 < argc) {
+			o.instance_name = argv[++i];
+			i++;
+		} else if (!strcmp(a, "-o") || !strcmp(a, "--output") ||
+			   !strcmp(a, "-p") || !strcmp(a, "--rpc-portal") ||
+			   !strcmp(a, "-i") || !strcmp(a, "--instance-id") ||
+			   !strcmp(a, "-n") || !strcmp(a, "--instance-name")) {
+			fprintf(stderr,
+				"easytier-cli: missing value for option %s\n", a);
+			return 2;
 		} else {
-			fprintf(stderr, "未知选项: %s\n", argv[i]);
+			fprintf(stderr, "未知选项: %s\n", a);
 			return 2;
 		}
 	}
@@ -203,27 +246,39 @@ int main(int argc, char **argv)
 		usage(stderr);
 		return 2;
 	}
+
 	const char *cmd = argv[i++];
+	int sub_argc = argc - i;
+	char **sub_argv = argv + i;
+
 	if (!strcmp(cmd, "help")) {
 		usage(stdout);
 		return 0;
 	}
-	if (!strcmp(cmd, "peer"))
-		return et_cli_peer(rpc);
-	if (!strcmp(cmd, "route"))
-		return et_cli_route(rpc);
-	if (!strcmp(cmd, "node"))
-		return et_cli_node(rpc);
-	if (!strcmp(cmd, "api"))
-		return do_api(argc - i, argv + i);
-	if (!strcmp(cmd, "service"))
-		return do_service(argc - i, argv + i);
 	if (!strcmp(cmd, "version")) {
 		printf("easytier-cli %s\n", ETD_VERSION);
 		return 0;
 	}
 	if (!strcmp(cmd, "doctor"))
 		return do_doctor();
-	usage(stderr);
-	return 2;
+	if (!strcmp(cmd, "api"))
+		return do_api(sub_argc, sub_argv);
+	if (!strcmp(cmd, "service"))
+		return do_service(sub_argc, sub_argv);
+
+	/* 上游同名子命令 */
+	memset(&ctx, 0, sizeof(ctx));
+	ctx.opts = o;
+	et_buf_init(&ctx.out);
+	rc = et_cli_dispatch(&ctx, cmd, sub_argc, sub_argv);
+	if (rc == ET_ENOENT) {
+		et_buf_free(&ctx.out);
+		et_cli_ctx_close(&ctx);
+		usage(stderr);
+		return 2;
+	}
+	(void)et_cli_flush(&ctx);
+	et_buf_free(&ctx.out);
+	et_cli_ctx_close(&ctx);
+	return rc == 0 ? 0 : 1;
 }

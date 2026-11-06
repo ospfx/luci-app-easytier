@@ -14,7 +14,7 @@
 **必须兼容 OpenWrt 18.06 ~ 26.x；业务逻辑只在 C 里写一份，LuCI 只做菜单与转发。**
 
 - 18.06 没有 `menu.d` JSON，菜单与模板渲染只能用 Lua1 的 `entry()` / `template()`，
-  所以 `luasrc/controller/easytier.lua` 必须保留，但**只允许**做两件事：注册菜单、把请求转发给 `easytierctl`；
+  所以 `luasrc/controller/easytier.lua` 必须保留，但**只允许**做两件事：注册菜单、把请求转发给 `easytier-cli`；
 - 后端语言不再是 Lua。旧的"Lua 写业务逻辑"约束已作废，**不要把逻辑搬回 Lua**；
 - 前端仍然是 ES5 + LuCI Lua1 模板：禁止 ES6+、禁止 LuCI JS 框架（`view.js` / `form.js` / `rpc.js`）。
 
@@ -39,7 +39,7 @@ repo/
 │   ├── lib/                      # 可复用层：schema、cfg、argv、uci、toml、proc、util、detect、i18n
 │   ├── daemon/                   # 生命周期：etd_entry(main)、service、super、net、watchdog
 │   ├── api/                      # HTTP/CLI 端点：1 个公共层 + 7 个 handler 文件 + 路由表
-│   └── ctl/                      # easytierctl（薄 CLI）
+│   └── ctl/                      # easytier-cli（薄 CLI）
 ├── luci-app-easytier/            # 前端桥接层（Lua1 + ES5 模板）
 │   ├── luasrc/controller/easytier.lua   # 129 行：菜单 + 转发
 │   ├── luasrc/view/easytier/*.htm       # 6 个页面模板（状态/Core/Web/日志/上传/控制台）
@@ -47,9 +47,9 @@ repo/
 │   ├── root/etc/config/easytier         # 默认 UCI（enabled=0 等 7 项）
 │   ├── root/etc/uci-defaults/luci-easytier  # 注册 ucitrack、enable 服务、清缓存
 │   ├── root/usr/share/easytier/i18n/*.json  # C 渲染用字典（由 tools/i18n_build.py 生成）
-│   ├── root/usr/share/rpcd/acl.d/*.json     # rpcd ACL（UCI easytier + easytierctl exec）
+│   ├── root/usr/share/rpcd/acl.d/*.json     # rpcd ACL（UCI easytier + easytier-cli exec）
 │   └── po/                              # 翻译源（zh_Hans + templates/*.pot）
-├── easytierd/Makefile            # OpenWrt 包：安装 easytierd + easytierctl
+├── easytierd/Makefile            # OpenWrt 包：安装 easytierd + easytier-cli
 ├── easytier/  easytier-noweb/    # 官方二进制打包（与本插件解耦）
 ├── scripts/cloud/                # 云端构建体系（见下文）
 ├── tests/                        # golden + 前端桥接测试
@@ -84,7 +84,7 @@ repo/
    （内存值恰好等于 `.def` 时不写回，避免一次保存就把 61 条 schema 默认值写进 `/etc/config/easytier`）；
 2. **argv 拼装**：`et_argv_core()` / `et_argv_web()` **按表的行序遍历**，所以**行顺序就是命令行顺序**；
 3. **表单渲染**：`config_render` 按 `.tab` 分组渲染，字段顺序 = 表的行顺序；
-4. **文档与调试**：`easytierctl api schema` 直接输出 JSON 版 schema。
+4. **文档与调试**：`easytier-cli api schema` 直接输出 JSON 版 schema。
 
 ### 新增一个选项的标准动作
 
@@ -159,7 +159,7 @@ scripts/cloud/setup.sh
 
 # 3) 日常编译（宿主 gcc，最快）
 scripts/cloud/cc.sh                 # 只编译（objs）
-scripts/cloud/cc.sh --link          # 编译并链接 easytierd / easytierctl
+scripts/cloud/cc.sh --link          # 编译并链接 easytierd / easytier-cli
 scripts/cloud/cc.sh --cross         # 交叉 gcc，仅头文件/语法验证
 scripts/cloud/cc.sh --cross --link  # 交叉编译并链接（需 staging 已有依赖）
 

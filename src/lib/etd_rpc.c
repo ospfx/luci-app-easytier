@@ -115,8 +115,8 @@ void et_rpc_close(et_rpc *c)
 }
 
 /* 组一个 RpcPacket 并连同 16 字节 PeerManagerHeader 一起发出去 */
-static int send_packet(et_rpc *c, const char *service, unsigned method,
-		       const uint8_t *body, size_t body_len)
+static int send_packet(et_rpc *c, const char *domain, const char *service,
+		       unsigned method, const uint8_t *body, size_t body_len)
 {
 	et_pb rpc, desc, comp;
 	uint8_t hdr[16];
@@ -128,6 +128,8 @@ static int send_packet(et_rpc *c, const char *service, unsigned method,
 	et_pb_init(&desc);
 	et_pb_init(&comp);
 
+	if (domain && et_pb_str(&desc, 1, domain))
+		goto out;
 	if (et_pb_str(&desc, 2, service) || et_pb_str(&desc, 3, service) ||
 	    et_pb_uint(&desc, 4, method))
 		goto out;
@@ -172,137 +174,211 @@ out:
 	return rc;
 }
 
-/* 读一帧，返回 payload（不含 16 字节头）到 out */
-static int recv_packet(et_rpc *c, et_pb *out, int64_t *txid, unsigned *ptype)
+/* 读一帧：payload（不含 16 字节头）到 f->pkt；同时取出
+ * transaction_id(3)、total_pieces(7)、piece_idx(8)。
+ * 上游 RPC 会按 UDP 载荷预算把大响应切成多个 piece（packet.rs:252-278），
+ * 必须靠这三个字段重组，否则只能拿到第一片的碎片。 */
+struct rpc_frame {
+	et_pb pkt;
+	int64_t txid;
+	unsigned ptype;
+	uint32_t total;
+	uint32_t idx;
+};
+
+static int recv_frame(et_rpc *c, struct rpc_frame *f)
 {
 	uint8_t lenbuf[4];
 	uint8_t hdr[16];
 	uint32_t flen;
 	et_pb_rd r;
-	unsigned f, w;
+	unsigned fld, w;
 	uint64_t v;
-	const uint8_t *b = NULL;
-	size_t l = 0;
 
 	if (read_full(c->fd, lenbuf, 4))
 		return -1;
 	flen = (uint32_t)lenbuf[0] | ((uint32_t)lenbuf[1] << 8) |
 	       ((uint32_t)lenbuf[2] << 16) | ((uint32_t)lenbuf[3] << 24);
-	if (flen < 16 || flen > (1u << 20))
+	if (flen < 16 || flen > (8u << 20))
 		return -1;
 	if (read_full(c->fd, hdr, sizeof(hdr)))
 		return -1;
-	*ptype = hdr[8];
-	et_pb_reset(out);
+	f->ptype = hdr[8];
+	et_pb_reset(&f->pkt);
 	if (flen > 16) {
 		size_t n = flen - 16;
 
-		if (out->cap < n) {
-			uint8_t *p = realloc(out->p, n);
+		if (f->pkt.cap < n) {
+			uint8_t *p = realloc(f->pkt.p, n);
 
 			if (!p)
 				return -1;
-			out->p = p;
-			out->cap = n;
+			f->pkt.p = p;
+			f->pkt.cap = n;
 		}
-		if (read_full(c->fd, out->p, n))
+		if (read_full(c->fd, f->pkt.p, n))
 			return -1;
-		out->len = n;
+		f->pkt.len = n;
 	}
 
-	*txid = 0;
-	et_pb_rd_init(&r, out->p, out->len);
-	while (et_pb_next(&r, &f, &w, &v, &b, &l) > 0) {
-		if (f == 3 && w == 0)
-			*txid = (int64_t)v;
+	f->txid = 0;
+	f->total = 0;
+	f->idx = 0;
+	et_pb_rd_init(&r, f->pkt.p, f->pkt.len);
+	while (et_pb_next(&r, &fld, &w, &v, NULL, NULL) > 0) {
+		if (w != 0)
+			continue;
+		if (fld == 3)
+			f->txid = (int64_t)v;
+		else if (fld == 7)
+			f->total = (uint32_t)v;
+		else if (fld == 8)
+			f->idx = (uint32_t)v;
 	}
 	return 0;
+}
+
+/* 把一帧 RpcPacket 的 body(field 5) 取到 out（追加或覆盖） */
+static int frame_body(struct rpc_frame *f, et_pb *out, int append)
+{
+	et_pb_rd r;
+	unsigned fld, w;
+	uint64_t v;
+	const uint8_t *b = NULL;
+	size_t l = 0;
+	int got = 0;
+
+	et_pb_rd_init(&r, f->pkt.p, f->pkt.len);
+	while (et_pb_next(&r, &fld, &w, &v, &b, &l) > 0) {
+		if (fld != 5 || w != 2)
+			continue;
+		if (!append)
+			et_pb_reset(out);
+		if (l) {
+			if (out->cap < out->len + l) {
+				size_t cap = out->cap ? out->cap : 128;
+				uint8_t *p;
+
+				while (cap < out->len + l)
+					cap *= 2;
+				p = realloc(out->p, cap);
+				if (!p)
+					return -1;
+				out->p = p;
+				out->cap = cap;
+			}
+			memcpy(out->p + out->len, b, l);
+			out->len += l;
+		}
+		got = 1;
+	}
+	return got ? 0 : -1;
 }
 
 int et_rpc_call(et_rpc *c, const char *service, unsigned method,
 		const uint8_t *body, size_t body_len, et_pb *out)
 {
-	et_pb frame;
-	int64_t want, got;
-	unsigned ptype;
-	int rc = -1;
+	return et_rpc_call_domain(c, NULL, service, method, body, body_len, out);
+}
 
-	if (send_packet(c, service, method, body, body_len))
+int et_rpc_call_domain(et_rpc *c, const char *domain, const char *service,
+		       unsigned method, const uint8_t *body, size_t body_len,
+		       et_pb *out)
+{
+	struct rpc_frame f;
+	int64_t want;
+	int rc = -1;
+	et_pb *pieces = NULL;
+	char *have = NULL;
+	uint32_t ntotal = 0, ngot = 0;
+
+	if (send_packet(c, domain, service, method, body, body_len))
 		return -1;
 	want = c->txid;
 
-	et_pb_init(&frame);
-	for (int i = 0; i < 16; i++) {
-		if (recv_packet(c, &frame, &got, &ptype))
+	et_pb_init(&f.pkt);
+	for (int tries = 0; tries < 256; tries++) {
+		if (recv_frame(c, &f))
 			goto out;
-		if (ptype != RPC_PTYPE_RESP || got != want)
+		if (f.ptype != RPC_PTYPE_RESP || f.txid != want)
 			continue; /* 跳过无关/迟到的帧 */
+		/* piece 0 带 compression_info；若被压缩则明确报错 */
 		{
 			et_pb_rd r;
-			unsigned f, w;
+			unsigned fld, w;
 			uint64_t v;
 			const uint8_t *b = NULL;
 			size_t l = 0;
 
-			et_pb_rd_init(&r, frame.p, frame.len);
-			while (et_pb_next(&r, &f, &w, &v, &b, &l) > 0) {
-				if (f == 5 && w == 2) {
-					et_pb_reset(out);
-					if (l && out->cap < l) {
-						uint8_t *p = realloc(out->p, l);
+			et_pb_rd_init(&r, f.pkt.p, f.pkt.len);
+			while (et_pb_next(&r, &fld, &w, &v, &b, &l) > 0) {
+				uint64_t algo = 0;
 
-						if (!p)
-							goto out;
-						out->p = p;
-						out->cap = l;
-					}
-					if (l)
-						memcpy(out->p, b, l);
-					out->len = l;
-					rc = 0;
-				}
-				if (f == 10 && w == 2) {
-					uint64_t algo = 0;
-
-					if (et_pb_find(b, l, 1, 0, &algo, NULL, NULL) &&
-					    algo == 2) {
-						fprintf(stderr, "easytier-cli: 响应被 zstd 压缩，当前实现不支持\n");
-						goto out;
-					}
+				if (fld != 10 || w != 2)
+					continue;
+				if (et_pb_find(b, l, 1, 0, &algo, NULL, NULL) &&
+				    algo == 2) {
+					fprintf(stderr,
+						"easytier-cli: response is zstd-compressed, unsupported\n");
+					goto out;
 				}
 			}
 		}
-		if (rc == 0)
+		if (f.total <= 1) {
+			if (frame_body(&f, out, 0))
+				goto out;
+			rc = 0;
 			break;
+		}
+		if (f.idx >= f.total || f.total > 32 * 1024)
+			goto out;
+		if (!pieces) {
+			ntotal = f.total;
+			pieces = calloc(ntotal, sizeof(*pieces));
+			have = calloc(ntotal, 1);
+			if (!pieces || !have)
+				goto out;
+			for (uint32_t i = 0; i < ntotal; i++)
+				et_pb_init(&pieces[i]);
+		}
+		if (f.idx < ntotal && !have[f.idx]) {
+			if (frame_body(&f, &pieces[f.idx], 0))
+				goto out;
+			have[f.idx] = 1;
+			ngot++;
+		}
+		if (ngot == ntotal) {
+			et_pb_reset(out);
+			for (uint32_t i = 0; i < ntotal; i++) {
+				if (!pieces[i].len)
+					continue;
+				if (out->cap < out->len + pieces[i].len) {
+					size_t cap = out->cap ? out->cap : 128;
+					uint8_t *pp;
+
+					while (cap < out->len + pieces[i].len)
+						cap *= 2;
+					pp = realloc(out->p, cap);
+					if (!pp)
+						goto out;
+					out->p = pp;
+					out->cap = cap;
+				}
+				memcpy(out->p + out->len, pieces[i].p,
+				       pieces[i].len);
+				out->len += pieces[i].len;
+			}
+			rc = 0;
+			break;
+		}
 	}
 out:
-	et_pb_free(&frame);
-	return rc;
-}
-
-int et_rpc_instance_uuid(et_rpc *c, uint8_t uuid[24])
-{
-	et_pb req, resp;
-	const uint8_t *inst = NULL, *id = NULL;
-	size_t inst_len = 0, id_len = 0;
-	int rc = -1;
-
-	et_pb_init(&req);
-	et_pb_init(&resp);
-	if (et_pb_uint(&req, 3, 5000))
-		goto out;
-	if (et_rpc_call(c, "WebClientService", 5, req.p, req.len, &resp))
-		goto out;
-	if (!et_pb_find(resp.p, resp.len, 1, 2, NULL, &inst, &inst_len))
-		goto out;
-	if (!et_pb_find(inst, inst_len, 1, 2, NULL, &id, &id_len))
-		goto out;
-	if (id_len != 24)
-		goto out;
-	memcpy(uuid, id, 24);
-	rc = 0;
-out:
-	et_pb_free(&req);
-	et_pb_free(&resp);
+	et_pb_free(&f.pkt);
+	if (pieces) {
+		for (uint32_t i = 0; i < ntotal; i++)
+			et_pb_free(&pieces[i]);
+		free(pieces);
+	}
+	free(have);
 	return rc;
 }

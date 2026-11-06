@@ -1,7 +1,7 @@
 #
 # easytierd - EasyTier 服务守护进程（C 重写版）
 #
-# 源码来自仓库根的 src/，交叉编译后安装 easytierd 与 easytierctl。
+# 源码来自仓库根的 src/，交叉编译后安装 easytierd 与 easytier-cli。
 #
 # 包版本跟随仓库根的 version.mk（EASYTIER_VERSION），与上游 EasyTier 版本号对齐，
 # 不再使用与上游脱节的独立版本号（原为 1.0.0）。
@@ -54,7 +54,7 @@ define Package/easytierd/install
 	$(INSTALL_DIR) $(1)/usr/sbin
 	$(INSTALL_DIR) $(1)/usr/bin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/build/easytierd $(1)/usr/sbin/easytierd
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/build/easytierctl $(1)/usr/bin/easytier-cli
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/build/easytier-cli $(1)/usr/bin/easytier-cli
 endef
 
 $(eval $(call BuildPackage,easytierd))

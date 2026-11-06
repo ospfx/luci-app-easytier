@@ -193,7 +193,7 @@ end
 
 -- 纯 GET：无参数，JSON 类型
 local cmd, mime, out = invoke("api_status")
-check(cmd == "/usr/sbin/easytierctl api 'api_status' 2>/dev/null", "api_status 命令 = " .. tostring(cmd))
+check(cmd == "/usr/bin/easytier-cli api 'api_status' 2>/dev/null", "api_status 命令 = " .. tostring(cmd))
 check(mime == "application/json", "api_status Content-Type = " .. tostring(mime))
 check(out == "STUB-OUT", "响应未原样输出")
 

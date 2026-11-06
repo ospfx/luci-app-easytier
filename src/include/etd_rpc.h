@@ -27,6 +27,11 @@ void et_rpc_close(et_rpc *c);
 int et_rpc_call(et_rpc *c, const char *service, unsigned method,
 		const uint8_t *body, size_t body_len, et_pb *out);
 
+/* 带 domain_name 的版本（RpcDescriptor.field1）：TcpProxyRpc 之类按域注册的服务 */
+int et_rpc_call_domain(et_rpc *c, const char *domain, const char *service,
+		       unsigned method, const uint8_t *body, size_t body_len,
+		       et_pb *out);
+
 /* WebClientService/5：取当前网络实例的 24 字节 UUID */
 int et_rpc_instance_uuid(et_rpc *c, uint8_t uuid[24]);
 

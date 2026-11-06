@@ -37,7 +37,7 @@
 # 在本地执行，实际在云端跑：只编译不链接（增量最快，适合边写边看语法/告警）
 scripts/cloud/cc.sh
 
-# 在本地执行，实际在云端跑：编译并链接 easytierd / easytierctl
+# 在本地执行，实际在云端跑：编译并链接 easytierd / easytier-cli
 scripts/cloud/cc.sh --link
 
 # 在本地执行，实际在云端跑：交叉 gcc（x86_64 musl），只做头文件/语法验证
@@ -186,7 +186,7 @@ golden 用例（11 组）覆盖：
 3. `lua5.1 tests/bridge_lua_test.lua`：用假的 `luci.http/util/sys/nixio.fs` 驱动真实 controller，校验
    - 菜单结构（5 个页面、顺序、标题、模板名）；
    - 28 个 `call` 端点全部注册（24 个旧端点一个不少）；
-   - 每个端点的 `easytierctl api ...` 命令行拼装与 shell quote；
+   - 每个端点的 `easytier-cli api ...` 命令行拼装与 shell quote；
    - JSON body → `--body-file`（内容正确且事后删除）；
    - 表单 → `key=value`；`upload_binary` → `file=/tmp/upload_<name> name=<name>`；
    - 每个端点的 `Content-Type`；
@@ -262,7 +262,7 @@ EOF
 export ET_UCI_CONFDIR=/tmp/et-it/etc/config
 BIN=/workspace/.build/main/src/build
 
-"$BIN/easytierctl" api config_get | head -c 400; echo
+"$BIN/easytier-cli" api config_get | head -c 400; echo
 "$BIN/easytierd" service start
 sleep 2
 ps w | grep -E 'easytierd|easytier-core' | grep -v grep
@@ -305,7 +305,7 @@ tail -n 5 /tmp/easytier.log
 
 ### 5.1 安装与升级
 
-- [ ] `opkg install easytierd_*.ipk luci-app-easytier_*.ipk` 成功，`ls -l /usr/sbin/easytierd /usr/sbin/easytierctl`
+- [ ] `opkg install easytierd_*.ipk luci-app-easytier_*.ipk` 成功，`ls -l /usr/sbin/easytierd /usr/sbin/easytier-cli`
       存在且可执行
 - [ ] 从旧版（`legacy/lua`）覆盖升级：`/etc/config/easytier` 与 `/etc/easytier/` 内容保留；
       升级后第一次启动日志里没有"配置解析失败"
@@ -371,8 +371,8 @@ tail -n 5 /tmp/easytier.log
 - [ ] 配置了门户私钥时，`ps w | grep easytier-core` **看不到私钥**（只在环境变量里）
 - [ ] 上传一个非 EasyTier 的可执行文件：提示"不是有效的easytier程序"，原二进制不受影响
 - [ ] 用带路径穿越的文件名上传（如 `../../etc/passwd`）：被 `upload_src_ok()` 拒绝
-- [ ] `easytierctl doctor` 输出与本机实际一致（架构、工具、磁盘、进程）
-- [ ] `easytierctl api schema | head -c 200` 返回 120 条字段，`count` 为 120
+- [ ] `easytier-cli doctor` 输出与本机实际一致（架构、工具、磁盘、进程）
+- [ ] `easytier-cli api schema | head -c 200` 返回 120 条字段，`count` 为 120
 
 ---
 

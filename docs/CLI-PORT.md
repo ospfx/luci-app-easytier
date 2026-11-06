@@ -179,3 +179,20 @@ PeerInfo（本机自环那条的实测字段）：
 **单机场景只需要 NodeInfo 这一行就能 100% 复刻**；多 peer 行要造一个两节点网络再抓一次。
 
 待办：`accepted_algo=None` 是否让 core 不压缩（决定 C 里要不要带 zstd）。
+
+
+## 8. 实现结果（2026-11-06 收尾）
+
+上游 2.7.0 的全部 17 个子命令已经用 C 复刻完成，代码在 src/lib/etd_cli_*.c，
+公共设施在 src/lib/etd_cli_common.c，分发在 src/ctl/easytierctl.c（安装名 /usr/bin/easytier-cli）。
+状态页（src/api/etd_api_conninfo.c）改为进程内调用 et_cli_render_part()，不再 fork。
+
+对拍结论（8 节点真实组网，上游 easytier-cli 2.7.0-8b7f1f01）：
+
+- 逐字节一致：peer / route / node / connector / mapped-listener / vpn-portal / proxy /
+  acl stats / port-forward list / whitelist show / stats show / logger get /
+  credential list / stun（动态字段如延迟/流量除外）。
+- 已知差异：acl set（TOML→protobuf 未实现，明确报错）、stun 改为读 core 的
+  NodeInfo.stun_info、peer-center 行序为确定性遍历序（上游是 HashMap 随机序）。
+
+实现细节与踩坑记录见 docs/HANDOFF-CLI.md 的 §2、§4、§5。

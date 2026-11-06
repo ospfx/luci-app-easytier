@@ -3,12 +3,15 @@
  *
  * 对应原 controller 的 act_conninfo。
  *
- * easytier-cli 每调用一次都要新起一个进程（路由器上约 200ms 起），而 RPC 本身
- * 只要几毫秒，所以旧实现改成了"按分区按需加载 + 3 秒 TTL 缓存"，前端一次只
- * 请求当前显示的分区。这一层语义完全照搬：分区名与子命令的映射、缓存文件名、
- * 首行时间戳格式、未运行时清缓存，都与原来一致，旧前端无需改动。
+ * 历史：旧实现按分区 fork 一次上游 easytier-cli（路由器上约 200ms/进程），前端一次只请求
+ * 当前显示的分区，再叠加 3 秒 TTL 缓存。C 重写后子命令已经在 lib/etd_cli_*.c 里，
+ * 这里改为**进程内**直接调用 et_cli_render_part()：一次 RPC 往返（几毫秒），
+ * 不再 fork、不再依赖 /usr/bin/easytier-cli。
+ * 分区名与子命令的映射、缓存文件名、首行时间戳格式、未运行时清缓存，都与原来一致，
+ * 旧前端无需改动（仍然按 Markdown 表格 | a | b | 解析）。
  */
 #include "etd_api_priv.h"
+#include "etd_cli.h"
 
 #include <ctype.h>
 #include <stdbool.h>
@@ -18,7 +21,7 @@
 #include <time.h>
 #include <unistd.h>
 
-/* 原 CONNINFO_CLI_PARTS：分区名 → easytier-cli 子命令 */
+/* 原 CONNINFO_CLI_PARTS：分区名 → 子命令（现在用于选渲染函数） */
 static const struct {
 	const char *name;
 	const char *cmd;
@@ -82,39 +85,28 @@ static void cache_write(const char *name, const char *data)
 	et_buf_free(&b);
 }
 
-/* 跑一个分区；子命令里带空格的（acl stats）按空格拆开传入 */
-static char *run_part(const char *clibin, const char *cmd)
+/* 进程内渲染一个分区（带缓存）。失败时给前端一条可读的错误文本。 */
+static char *render_part(const char *name)
 {
-	et_list words;
-	char *argv[8];
-	et_buf out, err;
-	size_t i;
+	char *data = cache_read(name);
+	et_buf b;
+	int rc;
 
-	et_list_init(&words);
-	et_list_split_ws(&words, cmd);
-	if (words.n == 0 || words.n > 6)
-		goto empty;
+	if (data)
+		return data;
 
-	argv[0] = (char *)clibin;
-	for (i = 0; i < words.n; i++)
-		argv[i + 1] = words.v[i];
-	argv[words.n + 1] = NULL;
-
-	et_buf_init(&out);
-	et_buf_init(&err);
-	/* 旧实现 2>&1 合并输出：错误信息也要原样给前端看 */
-	et_run(argv, &out, &err, 10);
-	if (err.p && err.len)
-		et_buf_add(&out, err.p);
-	if (!out.p)
-		et_buf_add(&out, "");
-	et_buf_free(&err);
-	et_list_free(&words);
-	return et_buf_steal(&out);
-
-empty:
-	et_list_free(&words);
-	return strdup("");
+	et_buf_init(&b);
+	rc = et_cli_render_part(name, &b);
+	if (rc || !b.p || !b.len) {
+		et_buf_free(&b);
+		et_buf_init(&b);
+		et_buf_addf(&b, "easytier-cli: failed to get %s\n", name);
+	}
+	data = et_buf_steal(&b);
+	if (!data)
+		data = strdup("");
+	cache_write(name, data);
+	return data;
 }
 
 /* 命令行是否以配置文件启动：--config-file ... 或 -c /xxx */
@@ -178,8 +170,6 @@ int et_api_conninfo(const et_req *req, et_res *res)
 	char *body_parts = NULL;
 	bool want_cli[CLI_PARTS_N];
 	bool want_cmdline = false;
-	et_uci *u;
-	char *core = NULL, *web = NULL, *clibin = NULL;
 	pid_t pid;
 
 	if (!parts || !*parts) {
@@ -197,13 +187,6 @@ int et_api_conninfo(const et_req *req, et_res *res)
 		want_cmdline = true;
 	}
 
-	u = et_uci_open();
-	et_resolve_bins(u, &core, &web, &clibin);
-	free(core);
-	free(web);
-	if (!clibin)
-		clibin = strdup("/usr/bin/easytier-cli");
-
 	pid = et_proc_pid_comm("easytier-core");
 
 	res->type = ET_CT_JSON;
@@ -215,11 +198,7 @@ int et_api_conninfo(const et_req *req, et_res *res)
 
 			if (!want_cli[i])
 				continue;
-			data = cache_read(CLI_PARTS[i].name);
-			if (!data) {
-				data = run_part(clibin, CLI_PARTS[i].cmd);
-				cache_write(CLI_PARTS[i].name, data);
-			}
+			data = render_part(CLI_PARTS[i].name);
 			et_json_kv_str(res, CLI_PARTS[i].name, data);
 			free(data);
 		}
@@ -250,8 +229,6 @@ int et_api_conninfo(const et_req *req, et_res *res)
 
 	et_json_end(res);
 
-	free(clibin);
 	free(body_parts);
-	et_uci_close(u);
 	return ET_OK;
 }

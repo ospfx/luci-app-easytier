@@ -1,139 +1,108 @@
 # 交接文档：把 easytierctl 重写为上游兼容的 easytier-cli
 
-> 最后更新：2026-11-06 04:20（+08:00）
-> 关联：`docs/CLI-PORT.md`（协议档案，含抓包实证）、`docs/C-PORT.md`（C 重写总档案）
+> 最后更新：2026-11-06（+08:00）
+> 关联：docs/CLI-PORT.md（协议档案，含抓包实证）、docs/C-PORT.md（C 重写总档案）
 
 ## 0. 一句话现状
 
-C 重写版已经能**不带任何上游二进制**直连 core 的 RPC 并渲染 `peer` / `route` / `node` 三张表，
-单机场景与上游 `easytier-cli` **逐字节一致**；多 peer 行、其余 13 个子命令、conninfo 进程内改造仍未做。
+C 重写版已经**不带任何上游二进制**直连 core 的 RPC，实现了上游 easytier-cli 2.7.0 的
+**全部 17 个子命令**（peer / connector / mapped-listener / stun / route / peer-center /
+vpn-portal / node / service / proxy / acl / port-forward / whitelist / stats / logger /
+credential / gen-autocomplete），并保留本项目的 api / doctor / version。
+
+在 8 节点真实组网（测试路由 root@10.0.15.254）上与上游 easytier-cli 2.7.0-8b7f1f01 对拍：
+peer / route / node / connector / mapped-listener / vpn-portal / proxy / acl stats /
+port-forward list / whitelist show / stats show / logger get / credential list / stun 的
+人类可读输出**逐字节一致**（动态字段如延迟/流量除外）。
 
 ## 1. 用户已确认的决策（不要再改方向）
 
 | 议题 | 决定 |
 | --- | --- |
-| CLI 形态 | **合并成单一 `easytier-cli`**，`api` / `service` / `doctor` / `version` 作为它的子命令（方案 b） |
-| 实现方式 | **全量 C 复刻**，不依赖上游 `easytier-cli` 二进制 |
-| 命名 | tag/标题 `v2.7.0-c`，版本号跟随 `version.mk`（2.7.0），标注 C 重写 / ospfx 作者版 |
-| Release | 直接在 `v2.7.0-c` 上**删旧资产换新**，不新增 tag |
+| CLI 形态 | **合并成单一 easytier-cli**，api / service / doctor / version 作为它的子命令 |
+| 实现方式 | **全量 C 复刻**，不依赖上游 easytier-cli 二进制 |
+| 命名 | tag/标题 v2.7.0-c，版本号跟随 version.mk（2.7.0），标注 C 重写 / ospfx 作者版 |
+| Release | 直接在 v2.7.0-c 上**删旧资产换新**，不新增 tag |
 | 范围 | 上游自己没写完的不管；但现有对齐不能破坏现有功能 |
 | 改动范围 | 只改工作流 + 为对齐版本/CLI 所需的代码；不碰无关业务代码 |
 
-## 2. 仓库状态
-
-本地 `E:\dsh\luci-app-easytier`，远端 `gh` = `git@github.com:ospfx/luci-app-easytier.git`（main）。
-
-关键提交（按时间）：
-
-| commit | 内容 |
-| --- | --- |
-| `4ad40ed` | CI：只发 C 重写版三包，剔除上游 easytier/easytier-noweb；tag/标题 `v2.7.0-c` |
-| `af01492` | `ETD_VERSION` 跟随 `PKG_VERSION` |
-| `900a445` | 版本宏改 `-DETD_VERSION_NUM` + 字符串化；CI 失败日志回传 `ci-logs` 分支 |
-| `f951264` | **新增 C 实现**：`etd_pb.c` / `etd_rpc.c` / `etd_cli_upstream.c`，`peer|route|node` |
-| `63931b5` | 修 NodeInfo 嵌套层级（body→{1:…}→{1:NodeInfo}） |
-| `59100e2` | 修 `node` 段错误（`char*[N][2]` 强转 `char***` 指针算术错位）+ listener 行 |
-| `dacddf7` | 三个包 Makefile 的 `version.mk` 读取时机修正 |
-| `72347bb` | node：过滤 `ring://`、补 `Interface IPv4` |
-| `4942f2a` | 合并改名为 `easytier-cli`，装 `/usr/bin`，Lua 与 ACL 同步 |
-| `67fd7fb` | 修 install 缺 `/usr/bin` 目录（上一次 CI 失败原因） |
-| `16d5873` | 补 `ipv4_addr`（NodeInfo field 2） |
-| `7e90bc0` | `help` 版面按上游重写（Commands/Options 清单 + `help` 子命令） |
-| `0656c47` | 修 cidr 解析复用游标导致 hostname/peer_id 清空 |
-
-## 3. 已实现（代码）
-
-| 文件 | 作用 |
-| --- | --- |
-| `src/include/etd_pb.h` + `src/lib/etd_pb.c` | 最小 protobuf 编解码（varint / length-delimited / fixed / 跳过未知字段） |
-| `src/include/etd_rpc.h` + `src/lib/etd_rpc.c` | core 自研 RPC 客户端：TCP 连接、`[u32LE 帧长][16B PeerManagerHeader][RpcPacket]`、txid 匹配、`accepted_algo=None` 避免 zstd |
-| `src/include/etd_cli.h` + `src/ctl/etd_cli_upstream.c` | `peer` / `route` / `node` 三张 Markdown 表 + 本机行渲染 |
-| `src/ctl/easytierctl.c`（安装名 `easytier-cli`） | 子命令分发：`peer|route|node|api|service|version|doctor|help`，`-p/--rpc-portal` |
-
-## 4. 已验证（真机 `root@10.0.15.254`，ImmortalWrt 25.12.1 / aarch64_cortex-a53）
-
-- `easytier-cli version` → `easytier-cli 2.7.0`（原来是 1.0.0）
-- `easytier-cli api api_status` → 正常返回 JSON（Lua 转发层走同一条路径）
-- 单机场景 `peer` / `route` 与上游 `diff` **无差异**
-- `node` 与上游一致（listener 12 条、过滤 `ring://`、`Interface IPv4`）
-- `usock` 无残留：旧的 `/usr/sbin/easytierctl` 已随包删除
-
-## 5. 未实现（按优先级）
-
-1. **多 peer 行**：`peer`/`route` 现在只渲染本机一行；8 节点组网下有 7 行缺失；
-2. **其余 13 个子命令**：`connector` `mapped-listener` `stun` `peer-center` `vpn-portal`
-   `proxy` `acl` `port-forward` `whitelist` `stats` `logger` `credential` `gen-autocomplete`
-   （`help` 里已经列出，但敲下去会回落到 usage）；
-3. **`-o json` / `--no-trunc` / `-i` / `-n`**：参数未实现；
-4. **conninfo 进程内 RPC**：`src/api/etd_api_conninfo.c:106` 还在 fork 上游 `easytier-cli`，
-   是 C 版最后的上游依赖 + 最大性能热点（11 分区 × ~200ms）；
-5. `node` 的 `Proxy CIDRs` 恒为空（NodeInfo 里对应字段未接）。
-
-## 6. 协议规格（实现多 peer 行所需，全部来自上游源码，不再需要抓包）
-
-### 6.1 帧与 RPC
+## 2. 架构（重要，别再往 ctl/ 里堆代码）
 
 ```
-frame = u32LE(16 + len) | PeerManagerHeader(16B) | RpcPacket(len)
-pm    = { u32 from=1, u32 to=1, u8 ptype(8=req,9=resp), u8 flags=0, u8 fwd=1, u8 rsv=0, u32 len }
-RpcPacket = { 1:from, 2:to, 3:txid, 4:RpcDescriptor{2:proto_name, 3:service_name, 4:method_index},
-              5:body, 6:is_request, 7:total_pieces=1, 10:{1:algo=None, 2:accepted_algo=None} }
+src/include/etd_cli.h       CLI 公共 API：选项、Markdown 表格、JSON、多实例扇出、
+                            实例选择器、RPC 调用（含分片重组）、格式化、子命令声明
+src/lib/etd_pb.c            最小 protobuf 编解码
+src/lib/etd_rpc.c           自研 RPC 客户端：帧/头/RpcPacket、txid、压缩协商、
+                            **total_pieces/piece_idx 分片重组**、domain_name 支持
+src/lib/etd_cli_common.c    表格/JSON/RPC/格式化/扇出/状态页分区渲染的公共实现
+src/lib/etd_cli_peer.c      peer / route / node
+src/lib/etd_cli_extra_a.c   connector / mapped-listener / vpn-portal / proxy
+src/lib/etd_cli_extra_b.c   stun / peer-center / stats / logger / credential /
+                            gen-autocomplete
+src/lib/etd_cli_extra_c.c   acl / port-forward / whitelist
+src/ctl/easytierctl.c       只做 main + 全局选项 + api/service/doctor/version 分发
+                            （安装名是 /usr/bin/easytier-cli）
+src/api/etd_api_conninfo.c  状态页连接信息：**进程内**调用 et_cli_render_part()，
+                            不再 fork easytier-cli
 ```
 
-### 6.2 PeerManageRpc method_index（`api_instance.proto` service 顺序，1-based）
+为什么子命令都在 lib/ 而不是 ctl/：状态页要在 **easytierd 进程内**直接渲染这些表
+（旧实现每个分区 fork 一次 easytier-cli，路由器上约 200ms/次；现在是毫秒级 RPC）。
+测试探针 tests/cli_probe.c 只链接 lib/ 即可交叉编译，不需要 libuci/json-c。
 
-| 方法 | index | 响应 |
+## 3. 已实现（对照上游 2.7.0 源码）
+
+| 上游命令 | RPC（服务/方法） | 输出 |
 | --- | --- | --- |
-| `ListPeer` | 1 | `{ 1: repeated PeerInfo peer_infos, 2: NodeInfo my_info }` |
-| `ListRoute` | 3 | `{ 1: repeated Route routes }` |
-| `ShowNodeInfo` | 7 | `{ 1: NodeInfo }` |
+| peer [list] | PeerManageRpc 1 + 3 + 7 | markdown 表，本机行 + 多 peer 行；排序 Local 优先 → PublicServer_ 前缀 → IPv4 → hostname |
+| route [list] | PeerManageRpc 3 + 1 + 7 | 13 列 markdown 表；next_hop 关联不上时跳过该行（与上游一致） |
+| route dump | PeerManageRpc 4 | 原样文本 |
+| node [info｜config] | PeerManageRpc 7 | 键值表（Virtual IP 作表头、Interface IPv4/IPv6、Listener 0 基） |
+| connector [list｜add｜remove] | ConnectorManageRpc 1 + ConfigRpc 1 | Rust {:#?} 版式 |
+| mapped-listener [list｜add｜remove] | MappedListenerManageRpc 1 + ConfigRpc 1 | Rust {:#?} 版式 |
+| vpn-portal [add-client｜remove-client｜clear-clients] | VpnPortalRpc 1 + ConfigRpc 1 | portal_name / listener / 每个 client 一段 |
+| proxy | TcpProxyRpc 1（domain=tcp/kcp_src/kcp_dst/quic_src/quic_dst） | markdown 表 |
+| acl stats | AclManageRpc 1 | AclStats 的 Display 文本（Global/ConnTrack/Rules） |
+| acl set | — | **未实现**：需要 TOML→acl.Acl 转换，明确报错（不静默成功） |
+| port-forward [list｜add｜remove] | PortForwardManageRpc 1 + ConfigRpc 1 | markdown 表 |
+| whitelist [show｜set-tcp｜set-udp｜clear-tcp｜clear-udp] | AclManageRpc 2 + ConfigRpc 1 | 两行文本 |
+| stats [show｜prometheus] | StatsRpc 1 / 2 | Value 用 BINARY humanize、Labels 用 "k=v, k=v" |
+| logger [get｜set] | LoggerRpc 2 / 1 | Current Log Level: xxx |
+| credential [generate｜revoke｜list] | CredentialManageRpc 1 / 2 / 3 | rounded 风格表格 |
+| stun | PeerManageRpc 7 的 NodeInfo.stun_info | Rust {:#?} 版式（见 §5 差异） |
+| gen-autocomplete <shell> | — | bash/zsh/fish/powershell/elvish/nu 静态补全脚本 |
+| -o json / --no-trunc / -i / -n / -p / -v | — | 与上游 clap 语义一致；多实例时输出 {instance_id, instance_name, result} |
 
-请求体：`{ 2: { 1: { 1: <24B instance uuid> } }, 3: 5000 }`；
-uuid 由 `WebClientService/5`（body `{3:5000}`）返回的 `{1:{1: uuid}}` 取得。
+## 4. 关键协议坑（这次踩出来的）
 
-### 6.3 字段编号
+1. **RPC 响应会被分片**：core 按 UDP 载荷预算把大 RpcPacket 切成 total_pieces 片
+   （easytier-core/src/rpc/packet.rs:252-278）。只读第一帧只能拿到碎片，
+   表现为"peer 列表有行但 stats 全是 0"。必须按 transaction_id + piece_idx 重组。
+2. **响应外层是 RpcResponse{response=1, error=2}**：错误帧不能当成空结果，
+   否则服务名/方法序号写错时表现为"表格空行"。现在会显式打印错误。
+3. **map 字段是 repeated entry{1:key,2:value}**：et_pb_find 只给第一条，
+   必须 et_pb_foreach_msg 逐条遍历（peer-center 的 global_peer_map、stats 的 labels）。
+4. **TcpProxyRpc 需要 descriptor.domain_name**：按 tcp/kcp_src/… 注册。
+5. **实例选择器**：请求体是 {2: 请求, 3: 5000}；请求里的 InstanceIdentifier 是
+   {1: UUID} 或 {2: {1: name}}；不指定时先查 WebClientService/5 做多实例扇出。
+6. **数值格式**：humansize::DECIMAL 固定两位小数（8.50 kB），BINARY 用于 stats
+   （2.58 MiB）；peer 表 lat 是 %.2f，route 表 next_hop_lat 是 Rust f64 Display（11.554）。
 
-```
-PeerInfo      : 1 peer_id, 2 repeated PeerConnInfo conns, 3 default_conn_id, 4 directly_connected_conns
-PeerConnInfo  : 1 conn_id, 2 my_peer_id, 3 peer_id, 4 features, 5 TunnelInfo, 6 PeerConnStats,
-                7 float loss_rate, 8 is_client, 9 network_name, 10 is_closed
-PeerConnStats : 1 rx_bytes, 2 tx_bytes, 3 rx_packets, 4 tx_packets, 5 latency_us
-TunnelInfo    : 1 tunnel_type(string: tcp/udp/wg/ws/wss/quic/faketcp)
-Route         : 1 peer_id, 2 Ipv4Inet, 3 next_hop_peer_id, 4 cost, 5 proxy_cidrs, 6 hostname,
-                7 StunInfo, 8 inst_id, 9 version, 10 feature_flag, 11 path_latency,
-                12 next_hop_peer_id_latency_first, 13 cost_latency_first, 14 path_latency_latency_first,
-                15 ipv6_addr, 16 public_ipv6_addr, 17 ipv6_public_addr_prefix
-Ipv4Inet      : 1 Ipv4Addr{1: uint32 addr}, 2 network_length
-StunInfo      : 1 udp_nat_type(enum), 2 tcp_nat_type, 3 last_update_time, 4 repeated public_ip
-NodeInfo      : 1 peer_id, 2 ipv4_addr(string CIDR), 4 hostname, 5 stun_info, 6 inst uuid,
-                7 repeated listeners, 8 <实例配置文本>, 9 version, 10/11 <未解析>
-```
+## 5. 有意的实现差异
 
-### 6.4 表格映射（`easytier-cli.rs:1885-1916`）
+| 项 | 差异 | 原因 |
+| --- | --- | --- |
+| stun | 直接读 core 已采集的 NodeInfo.stun_info，不自己发 STUN 包（不等 25s） | 避免 C 里再实现一套 STUN 采集；核心结果同源 |
+| acl set | 明确报"未实现 TOML→protobuf 转换"，不静默成功 | 保证用户不会误以为规则已生效 |
+| peer-center 行序 | 按 RPC 返回的 map 顺序（确定性），上游是 HashMap 随机序 | 上游每次顺序不同，无法也不该对齐 |
+| -v（verbose） | 只打调试信息到 stderr，不输出上游那种原始 protobuf JSON | 原始消息 JSON 需要完整 serde 映射，收益低 |
+| service | 保持本项目语义（转发给 easytierd 的 start/stop/...） | OpenWrt 包，服务由 procd 管理 |
 
-| 列 | 取值 |
-| --- | --- |
-| ipv4 | `Route.ipv4_addr` → 点分 + `/network_length` |
-| hostname | `Route.hostname` |
-| cost | 1 → `p2p`；n>1 → `relay(n)`；本机 `Local` |
-| lat(ms) | cost==1 → `PeerConnStats.latency_us / 1000`（`%.2f`）；否则 `Route.path_latency` |
-| loss | `PeerConnInfo.loss_rate * 100` → `%.1f%%` |
-| rx / tx | `PeerConnStats.rx_bytes / tx_bytes` → 十进制 humanize（`5.51 kB`） |
-| tunnel | `PeerConnInfo.tunnel.tunnel_type`，多个用 `,` 连接 |
-| NAT | `Route.stun_info.udp_nat_type` 枚举名（1 OpenInternet … 5 PortRestricted …） |
-| version | `Route.version`，空则 `unknown` |
+## 6. 验证环境与对拍方法
 
-合并：按 `peer_id` 把 `Route` 与 `PeerInfo` 关联，取第一个 `is_closed=false` 的 conn 读 stats/loss/tunnel。
-
-## 7. 测试环境
-
-- 测试路由：`root@10.0.15.254`（ImmortalWrt 25.12.1，aarch64_cortex-a53），SSH 用
-  `C:\Users\admin\.ssh\id_ed25519_sign`（`/tmp` 是 **noexec**，二进制要放 `/root/et/`）。
-- 上游参照二进制：`/root/et/easytier-core`、`/root/et/easytier-cli`（2.7.0-8b7f1f01）。
-- 组网测试配置（用户提供，只能用这一份）：
-  `ldeus-net` / `10.0.200.247/24` / `bj-router-2` / peer `wss://152.136.26.248:2096`，
-  secret `bjl385248CV?`；`/root/et/test.toml` 是原始 TOML，但 **core 2.7.0 会因未知 flags 拒绝**，
-  实测可用命令行代替：
+- 测试路由：root@10.0.15.254（ImmortalWrt 25.12.1，aarch64_cortex-a53）。
+  上游参照二进制：/root/et/easytier-core、/root/et/easytier-cli（2.7.0-8b7f1f01）。
+- 组网（用户提供，只能用这一份）：
 
   ```sh
   /root/et/easytier-core --network-name ldeus-net --network-secret 'bjl385248CV?' \
@@ -141,38 +110,64 @@ NodeInfo      : 1 peer_id, 2 ipv4_addr(string CIDR), 4 hostname, 5 stun_info, 6 
     --rpc-portal 127.0.0.1:15888 &
   ```
 
-- 参考输出（8 节点）：`/root/et/ref-peer.txt`、`/root/et/ref-route.txt`。
+- 本地交叉编译探针（开发机无 gcc，用 zig）：
 
-## 8. 构建 / 发布流程
+  ```sh
+  OUT=build/cli_probe bash tests/build_cli_probe.sh
+  scp build/cli_probe root@10.0.15.254:/root/et/cli_probe
+  ssh root@10.0.15.254 '/root/et/cli_probe -p 127.0.0.1:15888 peer'
+  ```
 
-1. push 到 `gh main` → workflow `sr1010-immortalwrt-apk.yml` 自动构建（约 20–45 分钟）；
-2. 只挑 C 三包（`easytierd-*` / `luci-app-easytier-*` / `luci-i18n-easytier-*`）就地替换 `v2.7.0-c` 资产；
-3. 失败时构建日志会推到 `ci-logs` 分支的 `ci-fail-<run_id>.log`（需要 `git fetch gh ci-logs`，无 GitHub API 权限也能看）；
-4. 装机：`apk add --allow-untrusted --force-overwrite /tmp/<pkg>.apk`。
+- 逐命令对拍（busybox 没有 diff，用 md5sum）：
 
-## 9. 踩过的坑（别再踩）
+  ```sh
+  U=/root/et/easytier-cli; M=/root/et/cli_probe
+  for c in peer route node connector mapped-listener vpn-portal proxy \
+           "acl stats" "port-forward list" "whitelist show" "stats show" \
+           "logger get" "credential list" stun; do
+    a=$($U -p 127.0.0.1:15888 $c | md5sum); b=$($M -p 127.0.0.1:15888 $c | md5sum)
+    [ "$a" = "$b" ] && echo "OK   $c" || echo "DIFF $c"
+  done
+  ```
+
+- 写操作验证要另起临时 core（不要动 15888 上的用户网络）：
+
+  ```sh
+  /root/et/easytier-core --no-tun -i 10.99.0.1/24 --network-name ettest \
+    --network-secret ettest123 -l tcp://0.0.0.0:21010 -l udp://0.0.0.0:21010 \
+    --rpc-portal 127.0.0.1:15889 &
+  /root/et/cli_probe -p 127.0.0.1:15889 connector add tcp://1.2.3.4:11010
+  ```
+
+## 7. 构建 / 发布流程
+
+1. push 到 gh main → workflow sr1010-immortalwrt-apk.yml 自动构建（约 20–45 分钟）；
+2. workflow 自己用 softprops/action-gh-release（overwrite_files: true）把三个包
+   覆盖到 v2.7.0-c，不需要手工删资产；
+3. 失败时构建日志会推到 ci-logs 分支的 ci-fail-<run_id>.log（git fetch gh ci-logs）；
+4. 装机：apk add --allow-untrusted --force-overwrite /tmp/<pkg>.apk。
+
+## 8. 踩过的坑（别再踩）
 
 | 坑 | 现象 / 解法 |
 | --- | --- |
-| PowerShell `-replace` + `Set-Content` 改带中文的源文件 | **UTF-8 被破坏成乱码**；一律用 `edit`/`write` 工具改文件 |
-| `git commit -m "多行中文"` 经 pwsh | 参数被拆散提交失败；用 `-F 文件` |
-| GitHub Actions 日志 | 无 admin 权限时 API 403；靠 `ci-logs` 分支回传 |
-| GitHub API 频率限制 | 未认证 60 次/小时，超了换 git 命令或等 reset |
-| `git push` 走 ssh:22 | 直连常超时；配 SOCKS 代理 `~/.ssh/config` 里 `ProxyCommand connect.exe -S 127.0.0.1:10808` |
-| 路由器 `tcpdump -w` | 写不出文件；用 `tcpdump -i any -x -n port 15888` 打屏 |
-| tcpdump 过滤器加引号 | 经 pwsh→ssh→ash 会被吃掉，报 `syntax error`；写成不带引号的 `port 15888` |
-| `node`/`nohup`/`timeout` | 路由器上是 busybox，没有；用 `&` + `sleep` |
-| `char *rows[N][2]` 强转 `char ***` | 指针算术步长错位 → SIGSEGV；先摆成 `char **rows[N]` |
-| `et_pb_find` 复用 `p/n` 游标 | 后续字段会在上一个字段内容里找 → 解析结果为空 |
-| `/tmp` noexec | 上游二进制要放 `/root/et/` |
+| PowerShell -replace + Set-Content 改带中文的源文件 | UTF-8 被破坏成乱码；一律用 edit/write 工具改文件 |
+| git commit -m 多行中文经 pwsh | 参数被拆散提交失败；用 -F 文件 |
+| GitHub Actions 日志 | 无 admin 权限时 API 403；靠 ci-logs 分支回传 |
+| GitHub API 频率限制 | 未认证 60 次/小时 |
+| git push 走 ssh:22 | 直连常超时；~/.ssh/config 配 SOCKS 代理 |
+| 路由器 tcpdump -w | 写不出文件；tcpdump -i any -x -n port 15888 打屏 |
+| tcpdump 过滤器引号 | pwsh→ssh→ash 会把引号吃掉 |
+| busybox 没有 nohup/timeout/diff | 用 & + sleep；比较用 md5sum |
+| char *rows[N][2] 强转 char *** | 指针步长错位 → SIGSEGV；先摆成 char **rows[N] |
+| et_pb_find 复用 p/n 游标 | 后续字段会在上一个字段内容里找 → 解析结果为空 |
+| 只读第一片 RPC 帧 | 大响应被分片，stats 全 0；必须按 piece_idx 重组 |
+| 把 RpcResponse.error 当空结果 | 服务/方法写错时静默空表；要显式报错 |
+| /tmp noexec | 上游二进制要放 /root/et/ |
+| zig cross-compile | 需要 ZIG_GLOBAL_CACHE_DIR / ZIG_LOCAL_CACHE_DIR 指到可写目录，否则 AccessDenied |
 
-## 10. 下一步清单（照做即可）
+## 9. 剩余可做（非阻塞）
 
-- [ ] 装 `0656c47` 的包，验证 `help` 与本机行 cidr（上一版验证过 cidr 有、hostname 被游标 bug 清空）
-- [ ] 实现 `ListPeer`(1) + `ListRoute`(3) 解析与多行合并渲染（规格见 §6）
-- [ ] 用 `/root/et/ref-peer.txt` 逐行对拍（8 行）
-- [ ] 逐个子命令实现：`connector`、`mapped-listener`、`stun`、`peer-center`、`vpn-portal`、
-      `proxy`、`acl`、`port-forward`、`whitelist`、`stats`、`logger`、`credential`、`gen-autocomplete`
-- [ ] `-o json` / `--no-trunc` / `-i` / `-n` 参数
-- [ ] conninfo 11 分区改用 `etd_rpc.c`（消掉最后的上游 fork，状态页 ~2s → 数十 ms）
-- [ ] README / README_EN / DEVELOPMENT.md 里 `easytierctl` 的说法同步为 `easytier-cli`
+- acl set 的 TOML→acl.Acl 转换（可用 src/lib/etd_toml.c 扩展）
+- peer ipv6 / peer list-foreign / peer list-global-foreign（2.7.0 有，属附加命令）
+- -v 输出上游那种原始 protobuf JSON（需要完整 serde 映射）
