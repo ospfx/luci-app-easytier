@@ -56,3 +56,4 @@ $(BUILD_DIR)/easytierctl: $(LIB_OBJS) $(CTL_OBJS) $(filter-out $(ENTRY_OBJ),$(DA
 
 clean:
 	rm -rf $(BUILD_DIR)
+# ci: ping (identity test)
