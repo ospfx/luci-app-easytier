@@ -262,12 +262,19 @@ if (!v || !*v) {
 
 - **本实现发射的旗标全部存在**：短选项 `-i/-d/-p/-n/-r/-l/-e/-m/-u/-w` 与上游长选项一一对应；
   没有拼错或已废弃的旗标。
-- **2.7.0 独有、默认不发射**（只有用户显式配置才出现在 argv）：
+- **2.7.0 独有参数已做版本门控**（2026-11-06）：`etd_argv.c` 启动前用
+  `easytier-core --version` 探测版本（结果按路径缓存），低于 2.7.0 时跳过
+  `--tcp-stun-servers`、`--socket-mark`、`--vpn-portal-client`、`--vpn-portal-private-key`
+  并在日志里写明"需要 >= 2.7.0"；VPN 门户在 2.6.x 上仍按旧写法
+  （`wg://主机:端口/客户端网段`）下发，2.7.0 上才用"私钥 + 客户端列表"。
+  2.7.0 独有、默认不发射（只有用户显式配置才出现在 argv）：
   `--tcp-stun-servers`、`--socket-mark`、`--vpn-portal-private-key`、
   `--vpn-portal-client`、`--vpn-portal-client-group`、`--credential(-file)`、
   `--secure-mode`、`--local-private/public-key`、`--ipv6-public-addr-*`。
   因此跑 2.6.4 内核时默认参数依然合法；但如果用户在表单里填了 2.6.4 不认识的项，
   core 会拒绝启动（能力门控需要读 core 版本后过滤 argv，属未做的增强）。
+- **配置文件模板兼容性**：包里 `/etc/easytier/config.toml` 已用 2.6.4 与 2.7.0 两个版本的
+  `easytier-core --check-config` 实测通过（2026-11-06）。
 - **未暴露给表单的上游选项（32 个）**，分三类：
   1. 进程级/启动方式：`--config-file`、`--config-dir`、`--machine-id`、`--check-config`、
      `--daemon`、`--disable-env-parsing`、`--gen-autocomplete`、`-w/--config-server`；

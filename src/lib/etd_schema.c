@@ -155,7 +155,8 @@ const et_field et_schema[] = {
 	{ .name = "vpn_portal_clients", .kind = ET_K_LIST, .def = NULL,
 	  .label = "VPN Portal Clients", .tab = "privacy",
 	  .help = "One WireGuard client per entry in the form NAME=CIDR (--vpn-portal-client parameter)",
-	  .core_flag = "--vpn-portal-client", .core_emit = ET_E_REPEAT },
+	  .core_flag = "--vpn-portal-client", .core_emit = ET_E_REPEAT,
+	  .min_core = "2.7.0" },
 
 	/* 私钥不通过 argv 传递：start_et() 用 ET_VPN_PORTAL_PRIVATE_KEY 环境变量下发，
 	 * 避免出现在进程命令行（状态页会展示命令行）。此处仅供表单与 et_argv_visible 脱敏。 */
@@ -163,7 +164,8 @@ const et_field et_schema[] = {
 	  .label = "VPN Portal Private Key", .tab = "privacy",
 	  .help = "Base64 encoded 32-byte WireGuard private key of the portal. Required since EasyTier 2.7.0, "
 		  "handed to easytier-core through the ET_VPN_PORTAL_PRIVATE_KEY environment variable",
-	  .core_flag = "--vpn-portal-private-key", .core_emit = ET_E_NONE },
+	  .core_flag = "--vpn-portal-private-key", .core_emit = ET_E_NONE,
+	  .min_core = "2.7.0" },
 
 	{ .name = "mtu", .kind = ET_K_INT, .def = NULL,
 	  .label = "MTU", .tab = "privacy",
@@ -360,7 +362,8 @@ const et_field et_schema[] = {
 	{ .name = "socket_mark", .kind = ET_K_INT, .def = NULL,
 	  .label = "Socket Mark", .tab = "privacy",
 	  .help = "Set SO_MARK on all underlay sockets, Linux only (--socket-mark parameter)",
-	  .core_flag = "--socket-mark", .core_emit = ET_E_VAL },
+	  .core_flag = "--socket-mark", .core_emit = ET_E_VAL,
+	  .min_core = "2.7.0" },
 
 	{ .name = "disable_upnp", .kind = ET_K_BOOL, .def = "0",
 	  .label = "Disable UPnP", .tab = "privacy",
@@ -385,7 +388,8 @@ const et_field et_schema[] = {
 	{ .name = "tcp_stun_servers", .kind = ET_K_LIST, .def = NULL,
 	  .label = "STUN Servers (TCP)", .tab = "privacy",
 	  .help = "Custom TCP STUN servers used for NAT type detection and hole punching (--tcp-stun-servers parameter)",
-	  .core_flag = "--tcp-stun-servers", .core_emit = ET_E_REPEAT },
+	  .core_flag = "--tcp-stun-servers", .core_emit = ET_E_REPEAT,
+	  .min_core = "2.7.0" },
 
 	/* extra_args 由 et_argv_core() 在最后逐行追加（行内按空白切分），
 	 * 数据实际存放在 et_cfg.extra_args，et_cfg_list("extra_args") 可取得 */

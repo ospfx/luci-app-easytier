@@ -161,7 +161,8 @@ static void emit_relay_whitelist(et_list *av, et_cfg *c)
 /* EasyTier 2.7.0 起 --vpn-portal 只接受 wg://主机:端口；
  * wg://主机:端口/网段（2.6.4 旧写法）与缺私钥的情况都要跳过并写 notes
  * （init.d:556-575） */
-static void emit_vpn_portal(et_list *av, et_cfg *c, et_buf *notes)
+static void emit_vpn_portal(et_list *av, et_cfg *c, const char *bin,
+			    et_buf *notes)
 {
 	const char *v = et_cfg_str(c, "vpn_portal");
 	const char *key = et_cfg_str(c, "vpn_portal_private_key");
@@ -170,6 +171,16 @@ static void emit_vpn_portal(et_list *av, et_cfg *c, et_buf *notes)
 		return;
 	if (!et_starts_with(v, "wg://")) {
 		note(notes, "vpn_portal: 地址 %s 格式不正确，应为 wg://主机:端口，已跳过门户启动", v);
+		return;
+	}
+	if (!et_core_at_least(bin, 2, 7, 0)) {
+		/* 2.6.x：门户地址把客户端网段写在 URL 里，且不需要私钥 */
+		if (!strchr(v + 5, '/'))
+			note(notes, "vpn_portal: 当前 easytier-core 是 2.6.x，"
+				    "门户地址需要写成 wg://主机:端口/客户端网段"
+				    "（2.7.0 才改为 wg://主机:端口 + 客户端列表），已跳过门户启动");
+		else
+			av_pair(av, "--vpn-portal", v);
 		return;
 	}
 	if (strchr(v + 5, '/')) {
@@ -190,7 +201,7 @@ static void emit_vpn_portal(et_list *av, et_cfg *c, et_buf *notes)
 }
 
 static void emit_core_custom(et_list *av, et_cfg *c, const et_field *f,
-			     et_buf *notes)
+			     const char *bin, et_buf *notes)
 {
 	const char *name = f->name;
 	const char *v;
@@ -206,7 +217,7 @@ static void emit_core_custom(et_list *av, et_cfg *c, const et_field *f,
 		return;
 	}
 	if (!strcmp(name, "vpn_portal")) {
-		emit_vpn_portal(av, c, notes);
+		emit_vpn_portal(av, c, bin, notes);
 		return;
 	}
 	if (!strcmp(name, "listenermode")) {
@@ -424,11 +435,23 @@ char **et_argv_core(et_cfg *c, const char *bin, et_buf *notes)
 
 		if (!f->core_flag || f->core_emit == ET_E_NONE)
 			continue;
+		if (f->min_core && !et_core_at_least(bin, f->min_core[0] - '0',
+						    f->min_core[2] - '0',
+						    f->min_core[4] - '0')) {
+			char vbuf[32] = "";
+
+			(void)et_core_version(bin, NULL);
+			note(notes,
+			     "%s: 当前 easytier-core 版本不支持该参数（需要 >= %s），已跳过",
+			     f->core_flag, f->min_core);
+			(void)vbuf;
+			continue;
+		}
 		if (f->core_emit == ET_E_CUSTOM) {
 			/* web_config 只在 web 模式下用，默认模式不参与 */
 			if (!strcmp(f->name, "web_config"))
 				continue;
-			emit_core_custom(&av, c, f, notes);
+			emit_core_custom(&av, c, f, bin, notes);
 			continue;
 		}
 		emit_generic(&av, f->core_flag, f->core_emit, et_cfg_str(c, f->name),

@@ -53,6 +53,9 @@ typedef struct {
 	enum et_emit core_emit;
 	const char *web_flag;  /* easytier-web 旗标 */
 	enum et_emit web_emit;
+	/* 需要的最低 core 版本（如 "2.7.0"）；NULL = 所有版本都支持。
+	 * 低版本 core 上这些旗标会被跳过并在 notes 里告警（2.6.x 不认识会直接报错退出）。 */
+	const char *min_core;
 } et_field;
 
 extern const et_field et_schema[];

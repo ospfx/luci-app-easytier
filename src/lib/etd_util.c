@@ -830,3 +830,79 @@ int et_log_rotate(const char *file, int max_kb, int keep_lines)
 	free(tmp);
 	return rc;
 }
+
+/* ---------------- core 版本探测（用于 argv 能力门控） ---------------- */
+
+static char ver_cached_bin[256];
+static int ver_cached[3];
+static int ver_have;
+
+int et_core_version(const char *bin, int v[3])
+{
+	const char *b = (bin && *bin) ? bin : ET_PATH_CORE_DEF;
+	char *argv[] = { (char *)b, (char *)"--version", NULL };
+	et_buf o, e;
+	int rc;
+
+	if (v) {
+		v[0] = v[1] = v[2] = 0;
+	}
+	if (ver_have && !strcmp(ver_cached_bin, b)) {
+		if (v) {
+			v[0] = ver_cached[0];
+			v[1] = ver_cached[1];
+			v[2] = ver_cached[2];
+		}
+		return 0;
+	}
+
+	et_buf_init(&o);
+	et_buf_init(&e);
+	rc = et_run(argv, &o, &e, 10);
+	if (rc == 0 && o.p) {
+		/* 形如 "easytier-core 2.7.0-8b7f1f01" 或 "easytier-core 2.6.4" */
+		const char *p = o.p;
+		int part = 0;
+		int nums[3] = { 0, 0, 0 };
+
+		while (*p && part < 3) {
+			if (*p >= '0' && *p <= '9') {
+				nums[part] = (int)strtol(p, (char **)&p, 10);
+				part++;
+				if (*p == '.')
+					p++;
+			} else {
+				p++;
+			}
+		}
+		if (part >= 1) {
+			snprintf(ver_cached_bin, sizeof(ver_cached_bin), "%s", b);
+			memcpy(ver_cached, nums, sizeof(ver_cached));
+			ver_have = 1;
+			et_buf_free(&o);
+			et_buf_free(&e);
+			if (v) {
+				v[0] = nums[0];
+				v[1] = nums[1];
+				v[2] = nums[2];
+			}
+			return 0;
+		}
+	}
+	et_buf_free(&o);
+	et_buf_free(&e);
+	return -1;
+}
+
+bool et_core_at_least(const char *bin, int a, int b, int c)
+{
+	int v[3];
+
+	if (et_core_version(bin, v) != 0)
+		return true; /* 探测不到版本时不门控，避免误伤老版本 */
+	if (v[0] != a)
+		return v[0] > a;
+	if (v[1] != b)
+		return v[1] > b;
+	return v[2] >= c;
+}

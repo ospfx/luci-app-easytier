@@ -93,6 +93,11 @@ int et_run(char *const argv[], et_buf *out, et_buf *err, int timeout_sec);
 char *et_run_capture(char *const argv[], int *status);
 /* 通过 /bin/sh -c 执行（仅用于必须管道的场景，调用方负责转义） */
 int et_run_shell(const char *cmd, et_buf *out, int timeout_sec);
+
+/* 探测 core 版本：成功返回 0 并写入 v[0..2]；结果按 bin 路径缓存 */
+int et_core_version(const char *bin, int v[3]);
+/* bin 的版本是否 >= (a,b,c)；探测失败按"是"处理（宁可多带参数也不要无故丢功能） */
+bool et_core_at_least(const char *bin, int a, int b, int c);
 /* 命令是否存在 */
 bool et_have_cmd(const char *name);
 
