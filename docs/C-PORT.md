@@ -338,6 +338,8 @@ SQLite WAL 需要的 mmap**，不是程序 bug。旧 Lua 实现用的也是同�
 修复（不改变用户可见配置）：运行时把 web 数据库放到 `/tmp/easytier/<basename>`，
 启动前从持久路径（默认 `/etc/easytier/et.db`）同步进来，停止时回写持久路径；
 `reset_database` 同时清理运行时副本。这样 web 控制台可用、重启后数据仍在。
+注意：回写发生在**干净停止**（stop/restart/toggle）时；掉电或 kill -9 造成的中断会丢
+最后一次运行期间的变更（运行时副本在 tmpfs）。
 
 ### acl set（2026-11-06 补实现）
 

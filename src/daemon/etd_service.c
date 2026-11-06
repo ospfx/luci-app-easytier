@@ -1066,6 +1066,20 @@ int et_service_stop(void)
 		et_proc_terminate_exe(wb && *wb ? wb : ET_PATH_WEB_DEF, 3000);
 		free(cb);
 		free(wb);
+		/* web 数据库回写持久路径（运行时副本在 tmpfs）。
+		 * 必须在 web 进程确实退出之后做，否则可能拷到未 checkpoint 的库。 */
+		{
+			char *dbp = et_uci_get_et(u, "web_db_path");
+			const char *p = (dbp && *dbp) ? dbp
+						      : "/etc/easytier/et.db";
+			char *rt = et_web_db_runtime(p);
+
+			if (rt) {
+				et_web_db_sync_out(p, rt);
+				free(rt);
+			}
+			free(dbp);
+		}
 		et_teardown(u);
 		et_uci_close(u);
 	}
