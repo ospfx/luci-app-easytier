@@ -320,8 +320,9 @@ if (!v || !*v) {
    - start 侥幸能用（走 start_service）；
    - **stop 变成 procd_kill，对 easytierd 完全无效**（服务停不下来）；
    - **reload 变成 "没有 reload_service 就 start"**，永远不会重启（实测 reload 后 core pid 不变）。
-   已改为不使用 USE_PROCD、定义 `start_service/stop_service/reload_service/status`，
-   由 rc.common 的非 procd 分发直接调用。
+   已改为不使用 USE_PROCD，并**显式定义** `start/stop/reload/restart/boot/shutdown/status`
+   （不设 USE_PROCD 时 rc.common 的 start/stop/reload 是空函数，只留 start_service 占位，
+   必须自己定义，否则 `/etc/init.d/easytier start` 什么都不做却返回 0）。
 2. **stop 按进程名杀 easytier-core**：会把用户手工启动、路径不同的 core 一起杀掉
    （实测把测试路由上 15888 的 8 节点 core 杀了）。已改为：
    监督进程把子进程 pid 写到 `/var/run/easytierd.children`，stop 先按清单杀；

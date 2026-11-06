@@ -1,17 +1,16 @@
 #!/bin/sh /etc/rc.common
 # Copyright (C) 2008-2020 OpenWrt.org
 #
-# 极薄委托脚本：这里不承载任何业务逻辑，start/stop/reload/status 各转发一条
-# 命令给 /usr/sbin/easytierd。进程监督（respawn、日志轮转、信号级联 kill）
-# 由 easytierd 自己实现。
+# 极薄委托脚本：start/stop/reload/status 各转发一条命令给 /usr/sbin/easytierd。
+# 进程监督（respawn、日志轮转、信号级联 kill）由 easytierd 自己实现。
 #
-# 注意（2026-11-06 真机踩坑）：**不能**设 USE_PROCD=1。设了之后 rc.common 会在
-# source 本脚本之后再定义 start/stop/reload（procd 包装），把这里定义的函数覆盖掉：
-#   - start 变成 rc_procd start_service，只调 start_service（能用）；
-#   - stop 变成 procd_kill，对没有注册 procd 实例的我们完全无效；
-#   - reload 变成 "有 reload_service 才 reload，否则 start"，永远不重启。
-# 不设 USE_PROCD 时 rc.common 用非 procd 分发：start→start_service、
-# stop→stop_service、reload→reload_service、restart→stop+start，全部落到本脚本。
+# 两个真机踩过的坑（2026-11-06）：
+#  1) **不能**设 USE_PROCD=1：设了之后 rc.common 会在 source 本脚本后再定义
+#     start/stop/reload（procd 包装）覆盖这里；stop 变成 procd_kill（对我们无效）、
+#     reload 永远只 start（不重启）。
+#  2) 不设 USE_PROCD 时，rc.common 的 start()/stop()/reload() 是**空函数**
+#     （只 return 0），它只提供 start_service/stop_service 作为占位。
+#     所以这里必须显式定义 start/stop/reload/restart/status/boot/shutdown。
 #
 # START=99 保持与旧版一致的启动顺序。
 
@@ -21,9 +20,15 @@ EXTRA_HELP="	status	Check whether easytierd is running"
 
 PROG=/usr/sbin/easytierd
 
-start_service() { "$PROG" service start; }
-stop_service() { "$PROG" service stop; }
-reload_service() { "$PROG" service reload; }
+start() { "$PROG" service start; }
+stop() { "$PROG" service stop; }
+reload() { "$PROG" service reload; }
+restart() { "$PROG" service restart; }
+boot() { start; }
+shutdown() { stop; }
+
+start_service() { start; }
+stop_service() { stop; }
 
 status() {
 	if "$PROG" service status; then
