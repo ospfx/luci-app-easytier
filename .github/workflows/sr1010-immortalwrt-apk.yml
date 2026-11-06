@@ -147,6 +147,20 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
+          # 发布前清空历史 release：除了即将重建的目标 tag，其它（含 ci-diagnostics、
+          # 旧命名 release）全部删掉；目标 tag 的 release 也先删再重建，避免残留旧资产。
+          gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --paginate \
+            --jq '.[] | [.tag_name, (.id|tostring)] | @tsv' 2>/dev/null |
+          while IFS="$(printf '\t')" read -r tag id; do
+            [ -n "$tag" ] || continue
+            if [ "$tag" = "${RELEASE_TAG}" ]; then
+              gh release delete "$tag" -R "$GITHUB_REPOSITORY" --yes --cleanup-tag \
+                && echo "deleted target release (will be recreated): $tag"
+            else
+              gh release delete "$tag" -R "$GITHUB_REPOSITORY" --yes --cleanup-tag \
+                && echo "deleted stale release: $tag"
+            fi
+          done
           for t in sr1010-immortalwrt-25.12.1-clean sr1010-immortalwrt-25.12.1; do
             if gh release view "$t" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
               gh release delete "$t" -R "$GITHUB_REPOSITORY" --yes --cleanup-tag && echo "deleted legacy release: $t"

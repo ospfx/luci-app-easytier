@@ -627,6 +627,81 @@ static pid_t et_start_et(et_cfg *c, et_uci *u)
 }
 
 /* start_web() */
+/* ---- web sqlite tmpfs 桥接 ---- */
+
+char *et_web_db_runtime(const char *persistent)
+{
+	const char *base;
+	char *out;
+
+	if (!persistent || !*persistent)
+		persistent = "/etc/easytier/et.db";
+	base = strrchr(persistent, '/');
+	base = base ? base + 1 : persistent;
+	if (!*base)
+		base = "et.db";
+	if (asprintf(&out, "/tmp/easytier/%s", base) < 0)
+		return NULL;
+	return out;
+}
+
+void et_web_db_sync_in(const char *persistent, const char *runtime)
+{
+	char side[600];
+
+	if (!persistent || !runtime || !strcmp(persistent, runtime))
+		return;
+	(void)et_mkdir_p("/tmp/easytier", 0700);
+	unlink(runtime);
+	snprintf(side, sizeof(side), "%s-wal", runtime);
+	unlink(side);
+	snprintf(side, sizeof(side), "%s-shm", runtime);
+	unlink(side);
+	if (et_file_exists(persistent)) {
+		(void)et_copy_file(persistent, runtime, false);
+		et_log_to(ET_LOG_WEB,
+			  "web 数据库同步到 %s（jffs2/overlay 不支持 sqlite WAL，改用 tmpfs 运行）",
+			  runtime);
+	}
+}
+
+void et_web_db_sync_out(const char *persistent, const char *runtime)
+{
+	char tmp[640];
+	char side[600];
+
+	if (!persistent || !runtime || !strcmp(persistent, runtime))
+		return;
+	if (!et_file_exists(runtime))
+		return;
+	snprintf(tmp, sizeof(tmp), "%s.tmp", persistent);
+	(void)et_copy_file(runtime, tmp, false);
+	if (rename(tmp, persistent) == 0)
+		et_log_to(ET_LOG_WEB, "web 数据库已回写到 %s", persistent);
+	else {
+		unlink(tmp);
+		et_log_to(ET_LOG_WEB, "web 数据库回写 %s 失败", persistent);
+	}
+	unlink(runtime);
+	snprintf(side, sizeof(side), "%s-wal", runtime);
+	unlink(side);
+	snprintf(side, sizeof(side), "%s-shm", runtime);
+	unlink(side);
+}
+
+static void et_cfg_override(et_cfg *c, const char *name, const char *val)
+{
+	if (!c || !name)
+		return;
+	for (size_t i = 0; i < c->n; i++) {
+		if (strcmp(c->items[i].f->name, name))
+			continue;
+		free(c->items[i].val);
+		c->items[i].val = val ? strdup(val) : NULL;
+		return;
+	}
+}
+
 static pid_t et_start_web(et_cfg *c, et_uci *u)
 {
 	char *bin = has_val(c->webbin) ? strdup(c->webbin)
@@ -663,7 +738,20 @@ static pid_t et_start_web(et_cfg *c, et_uci *u)
 
 	et_log_to(ET_LOG_WEB, "开始启动%s", bin);
 
+	/* sqlite 放到 tmpfs 运行（见函数头注释），argv 里临时替换 db 路径 */
+	const char *dbp = et_cfg_str(c, "web_db_path");
+	char *persistent = strdup(has_val(dbp) ? dbp : "/etc/easytier/et.db");
+	char *runtime = et_web_db_runtime(persistent);
+	if (persistent && runtime && strcmp(persistent, runtime) != 0) {
+		et_web_db_sync_in(persistent, runtime);
+		et_cfg_override(c, "web_db_path", runtime);
+	}
+
 	pid_t pid = et_instance_start_web(c, NULL);
+	if (persistent && runtime && strcmp(persistent, runtime) != 0)
+		et_cfg_override(c, "web_db_path", persistent);
+	free(persistent);
+	free(runtime);
 	if (pid <= 0) {
 		et_log_to(ET_LOG_WEB, "%s 启动失败", bin);
 		free(bin);
@@ -741,6 +829,18 @@ static void et_teardown(et_uci *u)
 	if (web_off) {
 		et_proc_terminate("easytier-web", 3000);
 		et_net_cleanup_web();
+		{
+			char *dbp = et_uci_get_et(u, "web_db_path");
+			const char *p = (dbp && *dbp) ? dbp
+						      : "/etc/easytier/et.db";
+			char *rt = et_web_db_runtime(p);
+
+			if (rt) {
+				et_web_db_sync_out(p, rt);
+				free(rt);
+			}
+			free(dbp);
+		}
 	}
 
 	/* 旧实现把延迟重载放在 core 分支里（此时 web 规则还没删）；

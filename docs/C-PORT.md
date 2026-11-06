@@ -321,6 +321,24 @@ if (!v || !*v) {
 正确做法是改成"父进程持有管道 → 读出来自己写文件"（轮转时由父进程 lseek/ftruncate），
 改动约 100 行，放在 super.c 的循环里，待后续处理。
 
+### Web 控制台（2026-11-07 真机修复）
+
+真机测试发现 `easytier-web-embed` 在本机（JFFS2 + overlayfs 根分区）启动即 panic：
+
+```
+panic: called `Result::unwrap()` on an `Err` value:
+  Execution Error: error returned from database: (code: 5386) disk I/O error
+```
+
+对比实验：同样的二进制、同样的参数，数据库放 `/tmp`（tmpfs）正常、放 `/etc/easytier`
+（overlay on jffs2）必崩；2.6.4 与 2.7.0 两个版本都一样 → 是 **JFFS2/overlay 不支持
+SQLite WAL 需要的 mmap**，不是程序 bug。旧 Lua 实现用的也是同一个二进制和默认路径，
+所以这个功能在这类设备上一直是坏的。
+
+修复（不改变用户可见配置）：运行时把 web 数据库放到 `/tmp/easytier/<basename>`，
+启动前从持久路径（默认 `/etc/easytier/et.db`）同步进来，停止时回写持久路径；
+`reset_database` 同时清理运行时副本。这样 web 控制台可用、重启后数据仍在。
+
 ### acl set（2026-11-06 补实现）
 
 `src/lib/etd_cli_acl_toml.c`（约 700 行）实现了 TOML 子集解析 + `acl.Acl` 编码：

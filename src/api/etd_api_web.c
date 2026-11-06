@@ -8,6 +8,7 @@
  * 任何类型变化都会让页面静默错位），因此这里统一以字符串读写 UCI。
  */
 #include "etd_api_priv.h"
+#include "etd_service.h"
 
 #include <stdbool.h>
 #include <stdio.h>
@@ -160,7 +161,28 @@ int et_api_web_db_reset(const et_req *req, et_res *res)
 	}
 
 	/* SQLite 的 -wal/-shm 必须一并删掉，否则重建时会把旧数据写回去 */
+	/* web 运行时数据库在 tmpfs 副本里（jffs2 不支持 WAL），
+	 * 这里一并清掉运行时副本，保证重置后重启不会把旧数据同步回来 */
 	et_list_init(&deleted);
+	{
+		char *rt = et_web_db_runtime(db_path);
+
+		if (rt) {
+			for (size_t i = 0; i < 3; i++) {
+				char *f2 = NULL;
+
+				if (i == 0)
+					f2 = strdup(rt);
+				else if (asprintf(&f2, "%s-%s", rt,
+						  i == 1 ? "wal" : "shm") < 0)
+					f2 = NULL;
+				if (f2 && et_unlink(f2) == ET_OK)
+					et_list_add(&deleted, f2);
+				free(f2);
+			}
+			free(rt);
+		}
+	}
 	for (size_t i = 0; i < 3; i++) {
 		if (i == 0) {
 			files[i] = strdup(db_path);
