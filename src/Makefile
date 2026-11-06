@@ -1,5 +1,4 @@
 # luci-app-easytier C 重写版构建
-# CI note: 触发条件见 .github/workflows/sr1010-immortalwrt-apk.yml（paths: src/**）
 #
 # 宿主/交叉通用：CC / CFLAGS / LIBS 均可外部覆盖。
 #   make objs  —— 只编译不链接（增量验证用，缺实现不会报链接错误）
@@ -56,4 +55,3 @@ $(BUILD_DIR)/easytierctl: $(LIB_OBJS) $(CTL_OBJS) $(filter-out $(ENTRY_OBJ),$(DA
 
 clean:
 	rm -rf $(BUILD_DIR)
-# ci: ping (identity test)
