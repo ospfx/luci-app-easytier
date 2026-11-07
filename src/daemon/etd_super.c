@@ -83,6 +83,21 @@ static void et_rotate_inplace(const char *file, int max_kb, int keep_lines)
 		pos++;
 
 	size_t keep = len - pos;
+
+	/* 只保 500 行还不够：单行可能很大（例如 core 打了一行超长错误），
+	 * 因此再按字节上限截一次，保证轮转后文件确实 <= max_kb。 */
+	long long cap = (long long)max_kb * 1024;
+	if (cap > 0 && (long long)keep > cap) {
+		size_t off = pos + (size_t)((long long)keep - cap);
+
+		while (off < len && data[off] != '\n')
+			off++;
+		if (off < len)
+			off++;
+		pos = off;
+		keep = len - pos;
+	}
+
 	int fd = open(file, O_WRONLY | O_TRUNC);
 	if (fd >= 0) {
 		size_t off = 0;
