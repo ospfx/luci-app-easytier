@@ -17,6 +17,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -45,6 +46,9 @@ struct et_sup {
 	time_t wd_next;
 	bool wd_wanted;
 	time_t next_rotate;
+	/* 子进程 stdout/stderr 管道读端（-1 未使用），监督进程读出来写日志文件 */
+	int core_rd;
+	int web_rd;
 };
 
 static void et_sup_write_children(struct et_sup *s);
@@ -193,17 +197,72 @@ static void et_sup_write_children(struct et_sup *s)
 	et_write_file(ET_CHILDFILE, buf, (size_t)off);
 }
 
+/* 把子进程管道里的输出读出来、追加到对应日志文件。
+ * 文件只由本进程 O_APPEND 写入，所以原地截断轮转不会产生"旧偏移稀疏文件"。 */
+static void et_sup_drain(struct et_sup *s)
+{
+	int *fds[2] = { &s->core_rd, &s->web_rd };
+	const char *logs[2] = { ET_LOG_CORE, ET_LOG_WEB };
+	char buf[8192];
+
+	for (int i = 0; i < 2; i++) {
+		int fd = *fds[i];
+
+		if (fd < 0)
+			continue;
+		for (;;) {
+			ssize_t n = read(fd, buf, sizeof(buf));
+
+			if (n > 0) {
+				et_append_file(logs[i], buf, (size_t)n);
+				continue;
+			}
+			if (n == 0) {
+				close(fd);
+				*fds[i] = -1;
+			}
+			break; /* EAGAIN 或出错 */
+		}
+	}
+}
+
+static void et_sup_set_nonblock(int fd)
+{
+	int fl;
+
+	if (fd < 0)
+		return;
+	fl = fcntl(fd, F_GETFL, 0);
+	if (fl >= 0)
+		(void)fcntl(fd, F_SETFL, fl | O_NONBLOCK);
+}
+
 static void et_sup_spawn(struct et_sup *s, struct et_slot *sl)
 {
 	time_t now = time(NULL);
-	pid_t pid = sl->web ? et_instance_start_web(s->cfg, NULL)
-			    : et_instance_start_core(s->cfg, NULL);
+	int rd = -1;
+	pid_t pid = sl->web ? et_instance_start_web(s->cfg, NULL, &rd)
+			    : et_instance_start_core(s->cfg, NULL, &rd);
 	if (pid > 0) {
 		sl->pid = pid;
 		sl->start_at = now;
+		if (rd >= 0) {
+			et_sup_set_nonblock(rd);
+			if (sl->web) {
+				if (s->web_rd >= 0)
+					close(s->web_rd);
+				s->web_rd = rd;
+			} else {
+				if (s->core_rd >= 0)
+					close(s->core_rd);
+				s->core_rd = rd;
+			}
+		}
 		et_sup_write_children(s);
 		return;
 	}
+	if (rd >= 0)
+		close(rd);
 
 	/* fork 失败等：按失败计数，避免无限快速重试 */
 	sl->fail++;
@@ -292,6 +351,7 @@ static void et_sup_shutdown(struct et_sup *s)
 	time_t deadline = time(NULL) + ET_RESPAWN_TIMEOUT;
 	while (et_sup_alive(s) && time(NULL) < deadline) {
 		et_sup_reap(s, true);
+		et_sup_drain(s);
 		if (!et_sup_alive(s))
 			break;
 		usleep(100 * 1000);
@@ -310,9 +370,25 @@ static void et_sup_shutdown(struct et_sup *s)
 		et_sup_reap(s, true);
 		usleep(50 * 1000);
 	}
+
+	/* 子进程都退了：把管道里剩余日志读干净再关 */
+	for (int i = 0; i < 50 && (s->core_rd >= 0 || s->web_rd >= 0); i++) {
+		et_sup_drain(s);
+		if (s->core_rd >= 0 || s->web_rd >= 0)
+			usleep(20 * 1000);
+	}
+	if (s->core_rd >= 0) {
+		close(s->core_rd);
+		s->core_rd = -1;
+	}
+	if (s->web_rd >= 0) {
+		close(s->web_rd);
+		s->web_rd = -1;
+	}
 }
 
-int et_super_run(et_cfg *c, pid_t core_pid, pid_t web_pid)
+int et_super_run(et_cfg *c, pid_t core_pid, pid_t web_pid, int core_log_rd,
+		 int web_log_rd)
 {
 	if (!c)
 		return ET_SUP_STOPPED;
@@ -321,6 +397,10 @@ int et_super_run(et_cfg *c, pid_t core_pid, pid_t web_pid)
 	memset(&s, 0, sizeof(s));
 	s.cfg = c;
 	s.self = getpid();
+	s.core_rd = core_log_rd;
+	s.web_rd = web_log_rd;
+	et_sup_set_nonblock(s.core_rd);
+	et_sup_set_nonblock(s.web_rd);
 	s.next_rotate = time(NULL) + ET_LOG_ROTATE_SEC;
 	s.wd_wanted = et_watchdog_wanted(c);
 
@@ -353,8 +433,25 @@ int et_super_run(et_cfg *c, pid_t core_pid, pid_t web_pid)
 
 	int result = ET_SUP_STOPPED;
 	for (;;) {
-		struct timespec ts = { .tv_sec = 0, .tv_nsec = 200 * 1000 * 1000 };
-		int sig = sigtimedwait(&set, NULL, &ts);
+		/* 200ms 的等待同时用来收子进程日志：管道可读就立刻转发 */
+		struct pollfd pfds[2];
+		nfds_t nf = 0;
+
+		if (s.core_rd >= 0) {
+			pfds[nf].fd = s.core_rd;
+			pfds[nf].events = POLLIN;
+			nf++;
+		}
+		if (s.web_rd >= 0) {
+			pfds[nf].fd = s.web_rd;
+			pfds[nf].events = POLLIN;
+			nf++;
+		}
+		if (poll(pfds, nf, 200) > 0)
+			et_sup_drain(&s);
+
+		struct timespec zero = { .tv_sec = 0, .tv_nsec = 0 };
+		int sig = sigtimedwait(&set, NULL, &zero);
 
 		if (sig == SIGTERM || sig == SIGINT) {
 			result = ET_SUP_STOPPED;

@@ -171,17 +171,38 @@ static int et_move_file(const char *src, const char *dst)
 /* fork/exec 一个常驻实例：cwd=/tmp，stdout/stderr 追加到日志，带上环境变量。
  * 子进程里顺手把 procd 那两项 limits 也设上（core=unlimited、nofile=1000000）。 */
 static pid_t et_spawn_argv(char *const argv[], const char *cwd,
-			   const char *out_path, char *const envp[])
+			   const char *out_path, char *const envp[],
+			   int *log_rd)
 {
+	int pfd[2] = { -1, -1 };
+
 	if (!argv || !argv[0])
 		return ET_EINVAL;
 
+	/* 管道必须在 fork 前建好：父进程拿读端，子进程把写端接到 stdout/stderr。
+	 * 这样日志文件只由监督进程写（O_APPEND），原地截断轮转才有效。 */
+	if (log_rd) {
+		if (pipe(pfd) < 0)
+			return ET_ERR;
+		*log_rd = -1;
+	}
+
 	fflush(NULL);
 	pid_t pid = fork();
-	if (pid < 0)
+	if (pid < 0) {
+		if (log_rd) {
+			close(pfd[0]);
+			close(pfd[1]);
+		}
 		return ET_ERR;
-	if (pid > 0)
+	}
+	if (pid > 0) {
+		if (log_rd) {
+			close(pfd[1]);
+			*log_rd = pfd[0];
+		}
 		return pid;
+	}
 
 	/* 子进程：独立会话，清空继承的信号掩码 */
 	setsid();
@@ -211,13 +232,21 @@ static pid_t et_spawn_argv(char *const argv[], const char *cwd,
 			close(devnull);
 	}
 
-	int fd = open(has_val(out_path) ? out_path : "/dev/null",
-		      O_WRONLY | O_CREAT | O_APPEND, 0644);
-	if (fd >= 0) {
-		dup2(fd, STDOUT_FILENO);
-		dup2(fd, STDERR_FILENO);
-		if (fd > STDERR_FILENO)
-			close(fd);
+	if (log_rd && pfd[1] >= 0) {
+		close(pfd[0]);
+		dup2(pfd[1], STDOUT_FILENO);
+		dup2(pfd[1], STDERR_FILENO);
+		if (pfd[1] > STDERR_FILENO)
+			close(pfd[1]);
+	} else {
+		int fd = open(has_val(out_path) ? out_path : "/dev/null",
+			      O_WRONLY | O_CREAT | O_APPEND, 0644);
+		if (fd >= 0) {
+			dup2(fd, STDOUT_FILENO);
+			dup2(fd, STDERR_FILENO);
+			if (fd > STDERR_FILENO)
+				close(fd);
+		}
 	}
 
 	execve(argv[0], argv, envp ? envp : environ);
@@ -463,7 +492,7 @@ static char **et_argv_core_with_log(et_cfg *c, const char *bin, et_buf *notes)
 	return out;
 }
 
-pid_t et_instance_start_core(et_cfg *c, et_buf *notes)
+pid_t et_instance_start_core(et_cfg *c, et_buf *notes, int *log_rd)
 {
 	if (!c)
 		return ET_EINVAL;
@@ -509,7 +538,7 @@ pid_t et_instance_start_core(et_cfg *c, et_buf *notes)
 	}
 	env[en] = NULL;
 
-	pid_t pid = et_spawn_argv(argv, "/tmp", ET_LOG_CORE, env);
+	pid_t pid = et_spawn_argv(argv, "/tmp", ET_LOG_CORE, env, log_rd);
 
 	free(tzs);
 	free(keys);
@@ -519,7 +548,7 @@ pid_t et_instance_start_core(et_cfg *c, et_buf *notes)
 	return pid;
 }
 
-pid_t et_instance_start_web(et_cfg *c, et_buf *notes)
+pid_t et_instance_start_web(et_cfg *c, et_buf *notes, int *log_rd)
 {
 	if (!c)
 		return ET_EINVAL;
@@ -556,7 +585,7 @@ pid_t et_instance_start_web(et_cfg *c, et_buf *notes)
 	}
 	env[en] = NULL;
 
-	pid_t pid = et_spawn_argv(argv, "/tmp", ET_LOG_WEB, env);
+	pid_t pid = et_spawn_argv(argv, "/tmp", ET_LOG_WEB, env, log_rd);
 
 	free(tzs);
 	et_argv_free(argv);
@@ -566,7 +595,7 @@ pid_t et_instance_start_web(et_cfg *c, et_buf *notes)
 }
 
 /* start_et()：准备二进制 → 清理残留 → config 校验 → 启动实例 → 防火墙/转发/时间戳 */
-static pid_t et_start_et(et_cfg *c, et_uci *u)
+static pid_t et_start_et(et_cfg *c, et_uci *u, int *log_rd)
 {
 	const char *arch = et_detect_arch();
 	et_log_to(ET_LOG_CORE, "easytier-core_%s开始启动", arch ? arch : "");
@@ -605,7 +634,7 @@ static pid_t et_start_et(et_cfg *c, et_uci *u)
 		et_ports_from_toml(&ports, toml);
 	}
 
-	pid_t pid = et_instance_start_core(c, NULL);
+	pid_t pid = et_instance_start_core(c, NULL, log_rd);
 	if (pid <= 0) {
 		et_log_to(ET_LOG_CORE, "%s 启动失败", bin);
 		et_ports_free(&ports);
@@ -702,7 +731,7 @@ static void et_cfg_override(et_cfg *c, const char *name, const char *val)
 	}
 }
 
-static pid_t et_start_web(et_cfg *c, et_uci *u)
+static pid_t et_start_web(et_cfg *c, et_uci *u, int *log_rd)
 {
 	char *bin = has_val(c->webbin) ? strdup(c->webbin)
 				      : strdup(ET_PATH_WEB_DEF);
@@ -747,7 +776,7 @@ static pid_t et_start_web(et_cfg *c, et_uci *u)
 		et_cfg_override(c, "web_db_path", runtime);
 	}
 
-	pid_t pid = et_instance_start_web(c, NULL);
+	pid_t pid = et_instance_start_web(c, NULL, log_rd);
 	if (persistent && runtime && strcmp(persistent, runtime) != 0)
 		et_cfg_override(c, "web_db_path", persistent);
 	free(persistent);
@@ -854,10 +883,15 @@ static void et_teardown(et_uci *u)
 
 /* ---------------- 启动流程 ---------------- */
 
-static int et_startup(et_cfg *c, et_uci *u, pid_t *core_pid, pid_t *web_pid)
+static int et_startup(et_cfg *c, et_uci *u, pid_t *core_pid, pid_t *web_pid,
+		       int *core_rd, int *web_rd)
 {
 	*core_pid = 0;
 	*web_pid = 0;
+	if (core_rd)
+		*core_rd = -1;
+	if (web_rd)
+		*web_rd = -1;
 
 	/* 旧实现每次 start 先清空两个日志 */
 	et_truncate_log(ET_LOG_CORE);
@@ -877,9 +911,9 @@ static int et_startup(et_cfg *c, et_uci *u, pid_t *core_pid, pid_t *web_pid)
 	free(en);
 
 	if (web_on)
-		*web_pid = et_start_web(c, u);
+		*web_pid = et_start_web(c, u, web_rd);
 	if (core_on)
-		*core_pid = et_start_et(c, u);
+		*core_pid = et_start_et(c, u, core_rd);
 
 	et_net_schedule_reload("检测到配置变更，将在5秒后后台重载网络、防火墙...");
 	return ET_OK;
@@ -912,7 +946,13 @@ static int et_service_run(void)
 		et_pidfile_write(ET_PIDFILE, getpid());
 
 		pid_t core = 0, web = 0;
-		et_startup(c, u, &core, &web);
+		int core_rd = -1, web_rd = -1;
+
+		et_startup(c, u, &core, &web, &core_rd, &web_rd);
+		if (core_rd < 0)
+			core_rd = -1;
+		if (web_rd < 0)
+			web_rd = -1;
 
 		/* core 与 web 都没起来（例如 enabled/web_enabled 全是 0，或二进制缺失），
 		 * 没有可监督的实例，直接走清理并退出——与旧实现"注册不到实例"等价。 */
@@ -923,7 +963,7 @@ static int et_service_run(void)
 			break;
 		}
 
-		int r = et_super_run(c, core, web);
+		int r = et_super_run(c, core, web, core_rd, web_rd);
 
 		/* 监督循环退出后再做一次旧 stop_service 的清理（enabled=0 时才动手） */
 		et_teardown(u);

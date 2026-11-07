@@ -187,7 +187,7 @@ src/api/etd_api_conninfo.c  状态页连接信息：**进程内**调用 et_cli_r
 | busybox 没有 nohup/timeout/diff | 用 & + sleep；比较用 md5sum |
 | init.d 里 USE_PROCD=1 但没注册 procd 实例 | rc.common 会覆盖脚本里的 start/stop/reload：stop 无效、reload 永不重启；别设 USE_PROCD |
 | 去掉 USE_PROCD 后又忘了定义 start/stop/reload | 不设 USE_PROCD 时 rc.common 的 start/stop/reload 只是 `return 0`，启动脚本"成功"但什么都不做 |
-| 日志原地截断 | core 的 fd 偏移不回退，截断后仍从旧偏移写 → 稀疏文件、大小不降；要限容得改成父进程管道转发 |
+| 日志原地截断 | core 的 fd 偏移不回退，截断后仍从旧偏移写 → 稀疏文件、大小不降；已改成父进程管道转发（子进程 stdout/stderr 接管道，监督进程 O_APPEND 写文件） |
 | easytier-web-embed 在 jffs2/overlay 上 panic（disk I/O error 5386） | SQLite WAL 需要 mmap，jffs2 不支持；把 web 数据库放 /tmp 运行、start/stop 时与 /etc 持久路径同步 |
 | 按进程名 kill easytier-core | 会误杀用户手工起的其他 core；按 children pidfile + /proc/pid/exe 精确匹配 |
 | char *rows[N][2] 强转 char *** | 指针步长错位 → SIGSEGV；先摆成 char **rows[N] |

@@ -17,7 +17,10 @@ enum {
 };
 
 /* 进入监督循环；core_pid/web_pid 为 0 表示该实例不参与监督。
+ * core_log_rd/web_log_rd 是子进程 stdout/stderr 的管道读端（-1 表示不使用管道），
+ * 监督进程负责读出来追加到对应日志文件，并在轮转时原地截断。
  * 返回 ET_SUP_STOPPED 或 ET_SUP_RESTART（由调用方决定是否重新走一遍启动流程）。 */
-int et_super_run(et_cfg *c, pid_t core_pid, pid_t web_pid);
+int et_super_run(et_cfg *c, pid_t core_pid, pid_t web_pid, int core_log_rd,
+		 int web_log_rd);
 
 #endif /* ETD_SUPER_H */
