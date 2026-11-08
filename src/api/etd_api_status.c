@@ -24,7 +24,7 @@
 	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "    \
 	"(KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36"
 #define ET_URL_LATEST                                                      \
-	"https://api.github.com/repos/EasyTier/EasyTier/releases/latest"
+	"https://api.github.com/repos/ospfx/luci-app-easytier/releases/latest"
 
 pid_t et_api_pid_web(void)
 {

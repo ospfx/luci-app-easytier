@@ -33,8 +33,8 @@ concurrency:
 
 env:
   TZ: Asia/Shanghai
-  RELEASE_TAG: v2.7.0-c
-  RELEASE_NAME: v2.7.0-c (aarch64_cortex-a53)
+  RELEASE_TAG: v2.7.0
+  RELEASE_NAME: v2.7.0 (aarch64_cortex-a53, C 重写版)
 
 jobs:
   build-apk:
@@ -120,6 +120,14 @@ jobs:
                 ;;
             esac
           done
+          # 在线更新用的 zip（官方 core + C 版 easytier-cli，由 build 脚本组装）
+          for f in out/*.zip; do
+            [ -e "$f" ] || continue
+            cp -v "$f" "release/"
+          done
+          if ! ls release/*.zip >/dev/null 2>&1; then
+            echo 'WARNING: 没有生成在线更新 zip，本次 Release 的「在线更新」将不可用'
+          fi
           echo '--- release/ ---'
           ls -l release
           test -n "$(find release -maxdepth 1 -name 'easytierd-*.apk' -print -quit)" || { echo 'ERROR: 缺少 easytierd APK'; exit 1; }
@@ -139,7 +147,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: sr1010-immortalwrt-25.12.1-aarch64_cortex-a53-apk
-          path: release/*.apk
+          path: release/*
 
       - name: Delete legacy releases and tags
         env:
@@ -186,27 +194,26 @@ jobs:
           name: ${{ env.RELEASE_NAME }}
           make_latest: true
           overwrite_files: true
-          files: release/*.apk
+          files: |
+            release/*.apk
+            release/*.zip
           body: |
-            ## EasyTier LuCI C 重写版 · v2.7.0-c
+            ## EasyTier LuCI C 重写版 · v2.7.0
 
             版本号与上游 EasyTier / 仓库 `version.mk` 的 `EASYTIER_VERSION` 对齐：**2.7.0**。
-            后缀 `-c` 表示这是 **C 重写版**（原 Lua + Shell 后端整体重写为 C，作者 ospfx）。
-            不再使用 `1.0.0` 这类与上游脱节的独立版本号。
+            发布命名与上游一致：tag `v2.7.0`，核心压缩包 `easytier-linux-<arch>-v2.7.0.zip`。
 
             **目标设备 / Target**：SR1010 · ImmortalWrt 25.12.1 · **aarch64_cortex-a53**（apk 包管理器）
 
-            ### 本 Release 只含 C 重写版三个包
-
-            | 包 | 内容 |
+            | 资产 | 内容 |
             | --- | --- |
             | `easytierd-2.7.0-r2.apk` | C 后端：`/usr/sbin/easytierd`（守护进程）+ `/usr/bin/easytier-cli`（管理 CLI，替代上游同名程序） |
             | `luci-app-easytier-2.7.0-r2.apk` | LuCI 界面：菜单、6 个页面模板、`/etc/init.d/easytier`、UCI 默认配置、rpcd ACL、i18n |
             | `luci-i18n-easytier-zh-cn-2.7.0.apk` | 简体中文语言包 |
+            | `easytier-linux-aarch64-v2.7.0.zip` | 核心二进制：上游 `easytier-core` + `easytier-web-embed`，`easytier-cli` 换成本仓库 C 版 |
 
-            上游官方的 `easytier` / `easytier-noweb` 核心二进制**不在**本 Release 内，请从
-            [EasyTier 官方 Release](https://github.com/EasyTier/EasyTier/releases) 下载对应架构，
-            或在 LuCI「VPN → EasyTier → 上传程序」页手动上传。
+            LuCI 的「在线更新 / 下载」按上游命名规则从这个 Release 取
+            `easytier-linux-aarch64-v2.7.0.zip`，所以更新核心不会把管理 CLI 换回官方版本。
 
             ### 安装（顺序不能反）
 
@@ -217,12 +224,6 @@ jobs:
             ```
 
             `luci-app-easytier` 强依赖 `easytierd`：先装 `easytierd`，否则界面能开但所有接口都会失败。
-
-            ### 与通用版 `v2.7.0` 的区别
-
-            - `v2.7.0`：多架构通用 ipk（x86_64 / aarch64_generic / mipsel_24kc），opkg 固件用。
-            - `v2.7.0-c`（本 Release）：SR1010 / ImmortalWrt 25.12.1 / aarch64_cortex-a53 的 apk 包，
-              只发 C 重写版包。
 
             构建来源：commit `${{ github.sha }}`，Actions run `${{ github.run_id }}`。
             移植取舍与已知差异见仓库 `docs/C-PORT.md`。

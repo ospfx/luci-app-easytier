@@ -854,7 +854,7 @@ static void dl_run(const char *version, const char *arch, char *const *proxies,
 		 arch, version);
 	snprintf(exdir, sizeof(exdir), "%s/extracted", ET_DL_DIR);
 	if (asprintf(&base,
-		     "https://github.com/EasyTier/EasyTier/releases/download/%s/"
+		     "https://github.com/ospfx/luci-app-easytier/releases/download/%s/"
 		     "easytier-linux-%s-%s.zip",
 		     version, arch, version) < 0) {
 		dl_fail(MSG_ALL_FAIL);

@@ -116,6 +116,28 @@ make -j"$(nproc)" package/luci-app-easytier/compile V=s
 log "编译官方核心包 easytier / easytier-noweb"
 make -j"$(nproc)" package/easytier/compile package/easytier-noweb/compile V=s || log "核心包编译失败（可忽略，继续收集已有包）"
 
+# 组装「在线更新」用的 zip：上游 core + web-embed，easytier-cli 换成本仓库
+# 的 C 版。命名与上游一致（easytier-linux-<arch>-v<ver>.zip），LuCI 的下载
+# 逻辑不用改，只把仓库指向本仓库即可。
+log "组装在线更新 zip（上游 core + C 版 easytier-cli）"
+UVER="$(sed -n 's/^EASYTIER_VERSION=//p' "$ROOT/version.mk" | tr -d ' \r')"
+CORE_DIR="$(find "$SDK_DIR/build_dir" -maxdepth 3 -type d -name "easytier-${UVER}" 2>/dev/null | head -n1)"
+CTL_BIN="$(find "$SDK_DIR/build_dir" -maxdepth 5 -type f -path "*easytierd-${UVER}/build/easytierctl" 2>/dev/null | head -n1)"
+if [ -n "$CORE_DIR" ] && [ -f "$CORE_DIR/easytier-core" ] && [ -n "$CTL_BIN" ]; then
+  ZROOT="$WORK/zip"
+  ZDIR="$ZROOT/easytier-linux-aarch64"
+  rm -rf "$ZROOT"; mkdir -p "$ZDIR"
+  cp -f "$CORE_DIR/easytier-core" "$ZDIR/"
+  [ -f "$CORE_DIR/easytier-web-embed" ] && cp -f "$CORE_DIR/easytier-web-embed" "$ZDIR/"
+  cp -f "$CTL_BIN" "$ZDIR/easytier-cli"
+  chmod 0755 "$ZDIR"/*
+  rm -f "$OUT/easytier-linux-aarch64-v${UVER}.zip"
+  ( cd "$ZROOT" && zip -qr "$OUT/easytier-linux-aarch64-v${UVER}.zip" easytier-linux-aarch64 )
+  log "在线更新 zip: $OUT/easytier-linux-aarch64-v${UVER}.zip"
+else
+  log "警告: 缺少 core 或 easytierctl，跳过在线更新 zip（CORE_DIR=$CORE_DIR CTL=$CTL_BIN）"
+fi
+
 log "收集 APK（只保留 EasyTier 相关包）"
 find bin/packages -type f -name '*.apk' | sort | while read -r f; do
   b="$(basename "$f")"

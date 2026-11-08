@@ -483,7 +483,7 @@ local translate = i18n.translate
 			</div>
 		</div>
 		<div style="margin-top:12px;font-size:12px;color:var(--text-secondary);">
-			<%=translate("Download from")%>: <a href="https://github.com/EasyTier/EasyTier/releases" target="_blank">https://github.com/EasyTier/EasyTier</a>
+			<%=translate("Download from")%>: <a href="https://github.com/ospfx/luci-app-easytier/releases" target="_blank">https://github.com/ospfx/luci-app-easytier/releases</a>
 		</div>
 	</div>
 </div>
@@ -519,7 +519,7 @@ var versionManager = {
 	loadVersions: function() {
 		var self = this;
 		var xhr = new XMLHttpRequest();
-		xhr.open('GET', 'https://api.github.com/repos/EasyTier/EasyTier/releases', true);
+		xhr.open('GET', 'https://api.github.com/repos/ospfx/luci-app-easytier/releases', true);
 		xhr.timeout = 10000;
 		
 		xhr.onload = function() {
