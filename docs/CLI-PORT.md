@@ -45,7 +45,7 @@
 
 ## 4. 验证环境
 
-- 测试路由器：`root@10.0.15.254`（ImmortalWrt 25.12.1，aarch64_cortex-a53，已装本仓库三个 apk）。
+- 测试路由器：`root@<router>`（ImmortalWrt 25.12.1，aarch64_cortex-a53，已装本仓库三个 apk）。
 - 快速迭代：本地用 zig 交叉编译 `aarch64-linux-musl` 的小探针（不依赖 libuci/json-c），scp 上去跑；
   正式包仍走 CI（`scripts/ci/build-immortalwrt-apk.sh`）。
 - 参考实现：上游 `easytier/src/easytier-cli.rs`（clap 子命令与输出）、`easytier-core/src/rpc/*`（协议）。
@@ -60,7 +60,7 @@
    Lua controller、`/etc/init.d/easytier`、i18n、文档同步。
 5. **发版**：在现有 `v2.7.0-c` Release 上删除旧资产、上传新资产（不新增 tag）。
 
-## 6. 现场实测记录（测试路由 root@10.0.15.254，aarch64）
+## 6. 现场实测记录（测试路由，aarch64）
 
 上游 `easytier-cli` = `2.7.0-8b7f1f01`，放在 `/root/et/`（`/tmp` 是 noexec，不能直接跑）。
 启动 core 做对照：
@@ -92,9 +92,9 @@ generate-completions。
 |----------------|-------------------------|
 | Hostname       | ImmortalWrt             |
 | Peer ID        | 611652664               |
-| Public IPv4    | 120.245.26.127          |
+| Public IPv4    | <public-ip>             |
 | UDP Stun Type  | PortRestricted          |
-| Interface IPv4 | 10.0.15.254             |
+| Interface IPv4 | <router-ip>             |
 ```
 
 ## 7. 线上字节（已抓包解码，2026-11-06）
@@ -161,7 +161,7 @@ PeerInfo（本机自环那条的实测字段）：
 ```
 1  = peer_id            = 611652664
 4  = hostname           = "ImmortalWrt"
-5  = stun_info { 1: udp_nat_type=5, 2: 3, 3: unix_ts, 4: "120.245.26.127", 5: 34698, 6: 34698 }
+5  = stun_info { 1: udp_nat_type=5, 2: 3, 3: unix_ts, 4: "<public-ip>", 5: 34698, 6: 34698 }
 6  = instance uuid 字符串 "197272bc-f32f-4c0e-a984-6e8515a91338"
 7  = listeners (repeated string) + 一条嵌套的 field14
 8  = { 13: f64, 13: f64, 6: msg, 7: msg, 4: 34 }      # 疑似连接/统计，列 lat/loss/rx/tx 可能来自这里

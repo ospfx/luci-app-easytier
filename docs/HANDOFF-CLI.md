@@ -10,7 +10,7 @@ C 重写版已经**不带任何上游二进制**直连 core 的 RPC，实现了�
 vpn-portal / node / service / proxy / acl / port-forward / whitelist / stats / logger /
 credential / gen-autocomplete），并保留本项目的 api / doctor / version。
 
-在 8 节点真实组网（测试路由 root@10.0.15.254）上与上游 easytier-cli 2.7.0-8b7f1f01 对拍：
+在 8 节点真实组网（测试路由）上与上游 easytier-cli 2.7.0-8b7f1f01 对拍：
 peer / route / node / connector / mapped-listener / vpn-portal / proxy / acl stats /
 port-forward list / whitelist show / stats show / logger get / credential list / stun 的
 人类可读输出**逐字节一致**（动态字段如延迟/流量除外）。
@@ -113,13 +113,13 @@ src/api/etd_api_conninfo.c  状态页连接信息：**进程内**调用 et_cli_r
 
 ## 6. 验证环境与对拍方法
 
-- 测试路由：root@10.0.15.254（ImmortalWrt 25.12.1，aarch64_cortex-a53）。
+- 测试路由：`root@<router>`（ImmortalWrt 25.12.1，aarch64_cortex-a53）。
   上游参照二进制：/root/et/easytier-core、/root/et/easytier-cli（2.7.0-8b7f1f01）。
-- 组网（用户提供，只能用这一份）：
+- 组网（示例参数，替换成自己的）：
 
   ```sh
-  /root/et/easytier-core --network-name ldeus-net --network-secret 'bjl385248CV?' \
-    -i 10.0.200.247/24 --hostname bj-router-2 -p wss://152.136.26.248:2096 \
+  /root/et/easytier-core --network-name <net-name> --network-secret '<secret>' \
+    -i 10.0.200.1/24 --hostname <hostname> -p wss://<relay>:2096 \
     --rpc-portal 127.0.0.1:15888 &
   ```
 
@@ -127,8 +127,8 @@ src/api/etd_api_conninfo.c  状态页连接信息：**进程内**调用 et_cli_r
 
   ```sh
   OUT=build/cli_probe bash tests/build_cli_probe.sh
-  scp build/cli_probe root@10.0.15.254:/root/et/cli_probe
-  ssh root@10.0.15.254 '/root/et/cli_probe -p 127.0.0.1:15888 peer'
+  scp build/cli_probe root@<router>:/root/et/cli_probe
+  ssh root@<router> '/root/et/cli_probe -p 127.0.0.1:15888 peer'
   ```
 
 - 逐命令对拍（busybox 没有 diff，用 md5sum）：

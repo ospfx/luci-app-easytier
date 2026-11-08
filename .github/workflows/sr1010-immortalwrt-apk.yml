@@ -5,7 +5,7 @@ name: SR1010 EasyTier C 重写版 APK (v2.7.0-c)
 # 不再使用 sr1010-immortalwrt-… 这种"原版风格"的 tag，也不再产生 ci-log-* 垃圾 tag。
 #
 # 发布内容只有 C 重写版的三个包：
-#   easytierd-<ver>-r2.apk            C 后端（/usr/sbin/easytierd + easytierctl）
+#   easytierd-<ver>-r2.apk            C 后端（/usr/sbin/easytierd + /usr/bin/easytier-cli）
 #   luci-app-easytier-<ver>-r2.apk    LuCI 界面
 #   luci-i18n-easytier-zh-cn-<ver>.apk 简体中文语言包
 # 上游官方的 easytier / easytier-noweb 核心二进制不再塞进本 Release。
@@ -200,7 +200,7 @@ jobs:
 
             | 包 | 内容 |
             | --- | --- |
-            | `easytierd-2.7.0-r2.apk` | C 后端：`/usr/sbin/easytierd`（守护进程）+ `/usr/sbin/easytierctl`（管理 CLI） |
+            | `easytierd-2.7.0-r2.apk` | C 后端：`/usr/sbin/easytierd`（守护进程）+ `/usr/bin/easytier-cli`（管理 CLI，替代上游同名程序） |
             | `luci-app-easytier-2.7.0-r2.apk` | LuCI 界面：菜单、6 个页面模板、`/etc/init.d/easytier`、UCI 默认配置、rpcd ACL、i18n |
             | `luci-i18n-easytier-zh-cn-2.7.0.apk` | 简体中文语言包 |
 
