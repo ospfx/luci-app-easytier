@@ -24,7 +24,7 @@ include $(TOPDIR)/rules.mk
 -include $(ETD_MK_DIR)../version.mk
 
 PKG_VERSION:=$(or $(EASYTIER_VERSION),2.7.0)
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 PKG_PO_VERSION:=$(PKG_VERSION)
 
