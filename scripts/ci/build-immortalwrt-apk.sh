@@ -20,7 +20,7 @@ log() { echo "[sr1010-apk] $*"; }
 
 # ---------- 宿主依赖 ----------
 need=""
-for c in gcc g++ make cmake zstd rsync unzip python3 gawk git curl tar; do
+for c in gcc g++ make cmake zstd rsync unzip zip python3 gawk git curl tar; do
   command -v "$c" >/dev/null 2>&1 || need="$need $c"
 done
 [ -f /usr/include/ncurses.h ] || need="$need libncurses-dev"
@@ -132,8 +132,11 @@ if [ -n "$CORE_DIR" ] && [ -f "$CORE_DIR/easytier-core" ] && [ -n "$CTL_BIN" ]; 
   cp -f "$CTL_BIN" "$ZDIR/easytier-cli"
   chmod 0755 "$ZDIR"/*
   rm -f "$OUT/easytier-linux-aarch64-v${UVER}.zip"
-  ( cd "$ZROOT" && zip -qr "$OUT/easytier-linux-aarch64-v${UVER}.zip" easytier-linux-aarch64 )
-  log "在线更新 zip: $OUT/easytier-linux-aarch64-v${UVER}.zip"
+  if ( cd "$ZROOT" && zip -qr "$OUT/easytier-linux-aarch64-v${UVER}.zip" easytier-linux-aarch64 ); then
+    log "在线更新 zip: $OUT/easytier-linux-aarch64-v${UVER}.zip"
+  else
+    log "警告: 打包在线更新 zip 失败（不影响 APK 产物）"
+  fi
 else
   log "警告: 缺少 core 或 easytierctl，跳过在线更新 zip（CORE_DIR=$CORE_DIR CTL=$CTL_BIN）"
 fi
